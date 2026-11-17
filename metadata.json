@@ -1,0 +1,6 @@
+{
+  "name": "RazorTune",
+  "description": "Native Android YouTube Music client with catalog search, account login, playlist syncing, and full-length Media3 background audio playback.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

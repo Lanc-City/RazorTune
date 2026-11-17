@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">RazorTune</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_playlists">Playlists</string>
+    <string name="nav_account">Account</string>
+    <string name="search_placeholder">Search songs, artists, albums…</string>
+    <string name="search_idle_title">Tune into YouTube Music</string>
+    <string name="search_idle_subtitle">Search tracks, albums, and playlists or switch filters above.</string>
+    <string name="playlists_signed_out_title">Sync your YouTube Music library</string>
+    <string name="playlists_signed_out_subtitle">Sign in via Account &amp; Sync in Settings to access your Liked Songs and personal playlists.</string>
+    <string name="action_go_to_account">Open Account &amp; Sync</string>
+    <string name="action_play_all">Play All</string>
+    <string name="action_sign_out">Sign Out</string>
+    <string name="account_signed_in_title">YouTube Music Connected</string>
+    <string name="account_signed_out_title">Sign in to YouTube Music</string>
+</resources>
