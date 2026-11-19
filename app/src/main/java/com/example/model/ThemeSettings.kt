@@ -82,10 +82,10 @@ data class ThemeSettings(
     val playerButtonsLayout: PlayerButtonsLayout = PlayerButtonsLayout.CONNECTED,
     val nowPlayingStyle: NowPlayingStyle = NowPlayingStyle.CLASSIC,
     val playerDesignStyle: PlayerDesignStyle = PlayerDesignStyle.MODERN_GLASS,
-    val playerSliderStyle: PlayerSliderStyle = PlayerSliderStyle.STANDARD,
-    val miniPlayerStyle: MiniPlayerStyle = MiniPlayerStyle.FLOATING_CARD,
-    val navBarStyle: NavBarStyle = NavBarStyle.FLOATING_GLASS,
-    val contentLayoutStyle: ContentLayoutStyle = ContentLayoutStyle.STANDARD,
+    val playerSliderStyle: PlayerSliderStyle = PlayerSliderStyle.GLOW,
+    val miniPlayerStyle: MiniPlayerStyle = MiniPlayerStyle.COMPACT_PILL,
+    val navBarStyle: NavBarStyle = NavBarStyle.ARCHIVE_PILL,
+    val contentLayoutStyle: ContentLayoutStyle = ContentLayoutStyle.SHOWCASE,
     val miniPlayerCornerRadiusDp: Int = 20,
     val miniPlayerShowLike: Boolean = false,
     val miniPlayerShowPrevious: Boolean = false,
@@ -94,6 +94,7 @@ data class ThemeSettings(
     val showSpectralVisualizer: Boolean = true,
     val visualizerStyle: VisualizerStyle = VisualizerStyle.BARS,
     val searchBarStyle: SearchBarStyle = SearchBarStyle.CLASSIC_BOX,
+    val customDnsEnabled: Boolean = false,
 )
 
 @Immutable

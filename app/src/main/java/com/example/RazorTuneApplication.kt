@@ -45,6 +45,9 @@ class RazorTuneApplication : Application(), ImageLoaderFactory {
     lateinit var repository: InnerTubeRepository
         private set
 
+    val innerTubeRepository: InnerTubeRepository
+        get() = repository
+
     lateinit var downloadManager: OfflineDownloadManager
         private set
 

@@ -48,6 +48,7 @@ class ThemePreferencesStore(private val context: Context) {
         val SHOW_SPECTRAL_VISUALIZER = booleanPreferencesKey("show_spectral_visualizer")
         val VISUALIZER_STYLE = stringPreferencesKey("visualizer_style")
         val SEARCH_BAR_STYLE = stringPreferencesKey("search_bar_style")
+        val CUSTOM_DNS_ENABLED = booleanPreferencesKey("custom_dns_enabled")
     }
 
     val settingsFlow: Flow<ThemeSettings> = context.themeDataStore.data.map { prefs ->
@@ -117,6 +118,7 @@ class ThemePreferencesStore(private val context: Context) {
             showSpectralVisualizer = prefs[Keys.SHOW_SPECTRAL_VISUALIZER] ?: true,
             visualizerStyle = visStyle,
             searchBarStyle = searchStyle,
+            customDnsEnabled = prefs[Keys.CUSTOM_DNS_ENABLED] ?: false,
         )
     }
 
@@ -202,5 +204,9 @@ class ThemePreferencesStore(private val context: Context) {
 
     suspend fun setSearchBarStyle(style: SearchBarStyle) {
         context.themeDataStore.edit { prefs -> prefs[Keys.SEARCH_BAR_STYLE] = style.name }
+    }
+
+    suspend fun setCustomDnsEnabled(enabled: Boolean) {
+        context.themeDataStore.edit { prefs -> prefs[Keys.CUSTOM_DNS_ENABLED] = enabled }
     }
 }

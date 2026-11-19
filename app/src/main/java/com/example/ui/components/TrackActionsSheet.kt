@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -39,6 +40,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -78,178 +80,234 @@ fun TrackActionsSheet(
     onDetails: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val cardShape = RoundedCornerShape(24.dp)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(bottom = 16.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            // Top Mini-Player Header Card
+            Surface(
+                shape = cardShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                val thumbRadius = (thumbnailCornerRadius * 10f / 16f).roundToInt().coerceIn(0, 26).dp
-                Box(
+                Row(
                     modifier = Modifier
-                        .size(52.dp)
-                        .clip(RoundedCornerShape(thumbRadius))
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-                    contentAlignment = Alignment.Center,
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    SubcomposeAsyncImage(
-                        model = track.thumbnailUrl,
-                        contentDescription = "${track.title} artwork",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.matchParentSize(),
-                        error = {
-                            Icon(
-                                imageVector = Icons.Rounded.MusicNote,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                    )
+                    val thumbRadius = (thumbnailCornerRadius * 10f / 16f).roundToInt().coerceIn(0, 26).dp
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(thumbRadius))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        SubcomposeAsyncImage(
+                            model = track.thumbnailUrl,
+                            contentDescription = "${track.title} artwork",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.matchParentSize(),
+                            error = {
+                                Icon(
+                                    imageVector = Icons.Rounded.MusicNote,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            text = "Now Playing",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = track.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = track.artist,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.width(14.dp))
-                Column(
+            }
+
+            // Quick Actions Tile Grid
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                ActionCardTile(
+                    icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
+                    label = "Queue",
+                    testTag = "action_add_to_queue",
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Text(
-                        text = track.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    onClick = { onDismiss(); onAddToQueue() },
+                )
+                ActionCardTile(
+                    icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                    label = "Playlist",
+                    testTag = "action_add_to_playlist",
+                    modifier = Modifier.weight(1f),
+                    onClick = { onDismiss(); onAddToPlaylist() },
+                )
+                val downloadLabel = when (downloadStatus) {
+                    DownloadStatus.DOWNLOADED -> "Downloaded"
+                    DownloadStatus.DOWNLOADING -> "Downloading"
+                    DownloadStatus.FAILED -> "Retry"
+                    DownloadStatus.NOT_DOWNLOADED -> "Download"
+                }
+                val downloadIcon = when (downloadStatus) {
+                    DownloadStatus.DOWNLOADED -> Icons.Rounded.DownloadDone
+                    else -> Icons.Rounded.Download
+                }
+                ActionCardTile(
+                    icon = downloadIcon,
+                    label = downloadLabel,
+                    testTag = "action_download",
+                    modifier = Modifier.weight(1f),
+                    isLoading = downloadStatus == DownloadStatus.DOWNLOADING,
+                    onClick = { onDismiss(); onDownload() },
+                )
+            }
+
+            // Artist & Album Card
+            Surface(
+                shape = cardShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    ActionCardRow(
+                        icon = Icons.Rounded.Person,
+                        label = "View artist",
+                        testTag = "action_view_artist",
+                        onClick = { onDismiss(); onViewArtist() },
                     )
-                    Text(
-                        text = track.artist,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    ActionCardRow(
+                        icon = Icons.Rounded.Album,
+                        label = "View album",
+                        testTag = "action_view_album",
+                        onClick = { onDismiss(); onViewAlbum() },
                     )
                 }
             }
 
-            HorizontalDivider(
-                modifier = Modifier.padding(vertical = 6.dp),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
-
-            ActionMenuItem(
-                icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
-                label = "Add to queue",
-                testTag = "action_add_to_queue",
-                onClick = {
-                    onDismiss()
-                    onAddToQueue()
-                },
-            )
-            ActionMenuItem(
-                icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                label = "Add to playlist",
-                testTag = "action_add_to_playlist",
-                onClick = {
-                    onDismiss()
-                    onAddToPlaylist()
-                },
-            )
-
-            val downloadLabel = when (downloadStatus) {
-                DownloadStatus.NOT_DOWNLOADED -> "Download"
-                DownloadStatus.DOWNLOADING -> "Downloading…"
-                DownloadStatus.DOWNLOADED -> "Downloaded (Tap to remove)"
-                DownloadStatus.FAILED -> "Download failed (Tap to retry)"
+            // Library, Share, Lyrics & Details Card
+            Surface(
+                shape = cardShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    ActionCardRow(
+                        icon = if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.LibraryAdd,
+                        label = if (isLiked) "Added to library" else "Add to library",
+                        testTag = "action_add_to_library",
+                        onClick = { onDismiss(); onAddToLibrary() },
+                    )
+                    ActionCardRow(
+                        icon = Icons.Rounded.Share,
+                        label = "Share",
+                        testTag = "action_share",
+                        onClick = { onDismiss(); onShare() },
+                    )
+                    ActionCardRow(
+                        icon = Icons.Rounded.Lyrics,
+                        label = "Toggle lyrics",
+                        testTag = "action_toggle_lyrics",
+                        onClick = { onDismiss(); onToggleLyrics() },
+                    )
+                    ActionCardRow(
+                        icon = Icons.Rounded.Info,
+                        label = "Details",
+                        testTag = "action_details",
+                        onClick = { onDismiss(); onDetails() },
+                    )
+                }
             }
-            val downloadIcon = when (downloadStatus) {
-                DownloadStatus.DOWNLOADED -> Icons.Rounded.DownloadDone
-                else -> Icons.Rounded.Download
-            }
-            ActionMenuItem(
-                icon = downloadIcon,
-                label = downloadLabel,
-                testTag = "action_download",
-                trailingProgress = downloadStatus == DownloadStatus.DOWNLOADING,
-                onClick = {
-                    onDismiss()
-                    onDownload()
-                },
-            )
 
-            ActionMenuItem(
-                icon = if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.LibraryAdd,
-                label = if (isLiked) "Added to library" else "Add to library",
-                testTag = "action_add_to_library",
-                onClick = {
-                    onDismiss()
-                    onAddToLibrary()
-                },
-            )
-            ActionMenuItem(
-                icon = Icons.Rounded.Person,
-                label = "View artist",
-                testTag = "action_view_artist",
-                onClick = {
-                    onDismiss()
-                    onViewArtist()
-                },
-            )
-            ActionMenuItem(
-                icon = Icons.Rounded.Album,
-                label = "View album",
-                testTag = "action_view_album",
-                onClick = {
-                    onDismiss()
-                    onViewAlbum()
-                },
-            )
-            ActionMenuItem(
-                icon = Icons.Rounded.Share,
-                label = "Share",
-                testTag = "action_share",
-                onClick = {
-                    onDismiss()
-                    onShare()
-                },
-            )
-            ActionMenuItem(
-                icon = Icons.Rounded.Lyrics,
-                label = "Toggle lyrics",
-                testTag = "action_toggle_lyrics",
-                onClick = {
-                    onDismiss()
-                    onToggleLyrics()
-                },
-            )
-            ActionMenuItem(
-                icon = Icons.Rounded.Info,
-                label = "Details",
-                testTag = "action_details",
-                onClick = {
-                    onDismiss()
-                    onDetails()
-                },
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+private fun ActionCardTile(
+    icon: ImageVector,
+    label: String,
+    testTag: String,
+    modifier: Modifier = Modifier,
+    isLoading: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier
+            .height(82.dp)
+            .clickable(onClick = onClick)
+            .testTag(testTag),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(10.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
 }
 
 @Composable
-private fun ActionMenuItem(
+private fun ActionCardRow(
     icon: ImageVector,
     label: String,
     testTag: String,
-    trailingProgress: Boolean = false,
     onClick: () -> Unit,
 ) {
     Row(
@@ -257,7 +315,7 @@ private fun ActionMenuItem(
             .fillMaxWidth()
             .heightIn(min = 52.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 10.dp)
+            .padding(horizontal = 20.dp, vertical = 12.dp)
             .testTag(testTag),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -265,7 +323,7 @@ private fun ActionMenuItem(
             imageVector = icon,
             contentDescription = label,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(22.dp),
         )
         Spacer(modifier = Modifier.width(16.dp))
         Text(
@@ -274,12 +332,6 @@ private fun ActionMenuItem(
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
         )
-        if (trailingProgress) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(18.dp),
-                strokeWidth = 2.dp,
-            )
-        }
     }
 }
 

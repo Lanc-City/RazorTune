@@ -444,7 +444,7 @@ class AccountViewModel : ViewModel() {
         }
     }
 
-    fun signOut(onCookiesCleared: () -> Unit) {
+    fun signOut(onCookiesCleared: () -> Unit = {}) {
         viewModelScope.launch {
             onCookiesCleared()
             repository.setCookie(null)
@@ -569,6 +569,10 @@ class ThemeViewModel : ViewModel() {
 
     fun setVisualizerStyle(style: VisualizerStyle) {
         viewModelScope.launch { themeStore.setVisualizerStyle(style) }
+    }
+
+    fun setCustomDnsEnabled(enabled: Boolean) {
+        viewModelScope.launch { themeStore.setCustomDnsEnabled(enabled) }
     }
 }
 

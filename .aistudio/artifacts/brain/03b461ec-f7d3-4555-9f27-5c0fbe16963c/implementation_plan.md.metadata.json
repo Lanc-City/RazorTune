@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for RazorTune, a native Kotlin/Compose Material 3 YouTube Music client powered by innertubex v0.11.7 and AndroidX Media3 MediaSessionService. Covers confirmed Phase 1 UX choices (Dynamic Material You dark theme, Songs-default search with filter chips, expandable Now Playing sheet from Mini-Player, and signed-out Playlists prompt), visual design system, architecture diagram, and stream resolution pipeline.",
+  "updatedAt":  "2026-11-16T10:19:58.906762109Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

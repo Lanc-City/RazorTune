@@ -5,8 +5,8 @@ import com.example.model.AlbumSummary
 import com.example.model.ArtistDetailData
 import com.example.model.ArtistSummary
 import com.example.model.HomeCardItem
-import com.example.model.HomeMoodChip
 import com.example.model.HomeFeedResult
+import com.example.model.HomeMoodChip
 import com.example.model.HomeShelf
 import com.example.model.LyricLine
 import com.example.model.LyricsData
@@ -33,6 +33,7 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.statement.bodyAsText
 import io.ktor.serialization.kotlinx.json.json
+import java.net.InetAddress
 import java.net.URLDecoder
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -45,10 +46,53 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import okhttp3.Dns
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.dnsoverhttps.DnsOverHttps
 
-class InnerTubeRepository {
+class InnerTubeRepository(
+    initialCustomDnsEnabled: Boolean = false,
+) {
+
+    @Volatile
+    private var customDnsEnabled: Boolean = initialCustomDnsEnabled
+
+    private val bootstrapClient: OkHttpClient = OkHttpClient.Builder()
+        .followRedirects(true)
+        .build()
+
+    private val cloudflareDoh: DnsOverHttps = DnsOverHttps.Builder()
+        .client(bootstrapClient)
+        .url("https://1.1.1.1/dns-query".toHttpUrl())
+        .bootstrapDnsHosts(
+            InetAddress.getByName("1.1.1.1"),
+            InetAddress.getByName("1.0.0.1"),
+        )
+        .build()
+
+    private val dynamicDns = object : Dns {
+        override fun lookup(hostname: String): List<InetAddress> {
+            return if (customDnsEnabled) {
+                runCatching { cloudflareDoh.lookup(hostname) }
+                    .getOrElse { Dns.SYSTEM.lookup(hostname) }
+            } else {
+                Dns.SYSTEM.lookup(hostname)
+            }
+        }
+    }
+
+    val okHttpClient: OkHttpClient = bootstrapClient.newBuilder()
+        .dns(dynamicDns)
+        .build()
+
+    fun setCustomDnsEnabled(enabled: Boolean) {
+        customDnsEnabled = enabled
+        synchronized(resolvedStreamCache) {
+            resolvedStreamCache.evictAll()
+        }
+    }
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -57,6 +101,9 @@ class InnerTubeRepository {
     }
 
     private val httpClient: HttpClient = HttpClient(OkHttp) {
+        engine {
+            preconfigured = okHttpClient
+        }
         install(ContentNegotiation) {
             json(json)
         }
@@ -123,8 +170,8 @@ class InnerTubeRepository {
     private fun hasValidSapisidCookie(cookie: String? = innerTube.cookie): Boolean {
         if (cookie.isNullOrBlank()) return false
         return innerTube.hasSapCookieAuth() ||
-            cookie.contains("SAPISID=") ||
-            cookie.contains("__Secure-3PAPISID=")
+                cookie.contains("SAPISID=") ||
+                cookie.contains("__Secure-3PAPISID=")
     }
 
     suspend fun syncAccountContext(): AccountInfo? = withContext(Dispatchers.IO) {
@@ -150,7 +197,7 @@ class InnerTubeRepository {
             val accounts = parsedAccounts.extractAccounts()
             val selected = accounts.firstOrNull { it.isSelected } ?: accounts.firstOrNull()
             val authUserFromUrl = selected?.signinUrl
-                ?.let { Regex("[?&]authuser=(\\d+)").find(it)?.groupValues?.getOrNull(1) }
+                ?.let { Regex("""[?&]authuser=(\d+)""").find(it)?.groupValues?.getOrNull(1) }
                 ?.takeIf { it.isNotBlank() }
             if (authUserFromUrl != null) {
                 innerTube.authUser = authUserFromUrl
@@ -179,7 +226,7 @@ class InnerTubeRepository {
             val body = response.bodyAsText()
             val menu = json.decodeFromString<AccountMenuResponse>(body)
             menu.actions
-                ?.firstOrNull()
+                .firstOrNull()
                 ?.openPopupAction
                 ?.popup
                 ?.multiPageMenuRenderer
@@ -241,10 +288,6 @@ class InnerTubeRepository {
         )
     }
 
-    suspend fun searchSongs(query: String): List<Track> =
-        search(query, SearchFilterOption.SONGS)
-            .mapNotNull { (it as? SearchResultItem.SongResult)?.track }
-
     suspend fun fetchHomeFeed(params: String? = null): HomeFeedResult = withContext(Dispatchers.IO) {
         val signedIn = hasValidSapisidCookie()
         innerTube.dataSyncId = innerTube.dataSyncId?.trim()?.takeIf { it.isNotBlank() }
@@ -294,7 +337,7 @@ class InnerTubeRepository {
             val homeResult = homeDeferred.await()
             val exploreResult = exploreDeferred.await()
 
-            val (homeShelves, parsedChips) = homeResult.getOrDefault(Pair(emptyList<HomeShelf>(), emptyList<HomeMoodChip>()))
+            val (homeShelves, parsedChips) = homeResult.getOrDefault(Pair(emptyList(), emptyList()))
             val exploreShelves = exploreResult.getOrDefault(emptyList())
 
             val combined = mutableListOf<HomeShelf>()
@@ -605,9 +648,9 @@ class InnerTubeRepository {
             val cleanArtist = subtitleParts.firstOrNull { part ->
                 val lower = part.lowercase(Locale.US)
                 lower != "song" &&
-                    lower != "video" &&
-                    !lower.endsWith("plays") &&
-                    !lower.endsWith("views")
+                        lower != "video" &&
+                        !lower.endsWith("plays") &&
+                        !lower.endsWith("views")
             } ?: subtitleParts.firstOrNull() ?: "YouTube Music"
 
             return HomeCardItem.TrackCard(
@@ -630,12 +673,12 @@ class InnerTubeRepository {
                 ?.contentOrNull
 
             val isAlbum = pageType == "MUSIC_PAGE_TYPE_ALBUM" ||
-                browseId.startsWith("MPRE") ||
-                browseId.startsWith("OLAK")
+                    browseId.startsWith("MPRE") ||
+                    browseId.startsWith("OLAK")
             val isPlaylist = pageType == "MUSIC_PAGE_TYPE_PLAYLIST" ||
-                browseId.startsWith("VL") ||
-                browseId.startsWith("PL") ||
-                browseId.startsWith("RDCLAK")
+                    browseId.startsWith("VL") ||
+                    browseId.startsWith("PL") ||
+                    browseId.startsWith("RDCLAK")
 
             if (isAlbum || isPlaylist) {
                 return HomeCardItem.CollectionCard(
@@ -667,24 +710,51 @@ class InnerTubeRepository {
     private fun prioritizeAndDedupeShelves(raw: List<HomeShelf>): List<HomeShelf> {
         val unique = raw
             .filter { it.items.isNotEmpty() }
-            .distinctBy { "${it.strapline.orEmpty().lowercase(Locale.US)}|${it.title.lowercase(Locale.US)}" }
+            .distinctBy { "${it.strapline.orEmpty().lowercase(Locale.US)}|{}${it.title.lowercase(Locale.US)}" }
 
-        val keepListening = unique.filter { isKeepListeningOrQuickPicks(it) }
-        val similar = unique.filter { !isKeepListeningOrQuickPicks(it) && isSimilarMusicShelf(it) }
-        val trending = unique.filter {
+        val hasExplicitQuickPicks = unique.any {
+            it.title.contains("quick picks", ignoreCase = true) ||
+                    it.title.contains("speed dial", ignoreCase = true)
+        }
+
+        val withQuickPicks = if (!hasExplicitQuickPicks) {
+            val candidateTracks = unique
+                .flatMap { it.items }
+                .filterIsInstance<HomeCardItem.TrackCard>()
+                .distinctBy { it.track.videoId }
+                .take(12)
+
+            if (candidateTracks.size >= 4) {
+                val quickPicksShelf = HomeShelf(
+                    id = "synthesized_quick_picks",
+                    title = "Quick picks",
+                    strapline = "START RADIO FROM A SONG",
+                    items = candidateTracks,
+                )
+                listOf(quickPicksShelf) + unique
+            } else {
+                unique
+            }
+        } else {
+            unique
+        }
+
+        val keepListening = withQuickPicks.filter { isKeepListeningOrQuickPicks(it) }
+        val similar = withQuickPicks.filter { !isKeepListeningOrQuickPicks(it) && isSimilarMusicShelf(it) }
+        val trending = withQuickPicks.filter {
             !isKeepListeningOrQuickPicks(it) && !isSimilarMusicShelf(it) && isTrendingShelf(it)
         }
-        val newReleases = unique.filter {
+        val newReleases = withQuickPicks.filter {
             !isKeepListeningOrQuickPicks(it) &&
-                !isSimilarMusicShelf(it) &&
-                !isTrendingShelf(it) &&
-                isNewReleasesShelf(it)
+                    !isSimilarMusicShelf(it) &&
+                    !isTrendingShelf(it) &&
+                    isNewReleasesShelf(it)
         }
-        val others = unique.filter {
+        val others = withQuickPicks.filter {
             !isKeepListeningOrQuickPicks(it) &&
-                !isSimilarMusicShelf(it) &&
-                !isTrendingShelf(it) &&
-                !isNewReleasesShelf(it)
+                    !isSimilarMusicShelf(it) &&
+                    !isTrendingShelf(it) &&
+                    !isNewReleasesShelf(it)
         }
 
         return (keepListening + similar + trending + newReleases + others)
@@ -695,39 +765,39 @@ class InnerTubeRepository {
     private fun isKeepListeningOrQuickPicks(shelf: HomeShelf): Boolean {
         val t = shelf.title.lowercase(Locale.US)
         return t.contains("keep listening") ||
-            t.contains("listen again") ||
-            t.contains("quick picks") ||
-            t.contains("speed dial") ||
-            t.contains("from your library") ||
-            t.contains("forgotten favorites")
+                t.contains("listen again") ||
+                t.contains("quick picks") ||
+                t.contains("speed dial") ||
+                t.contains("from your library") ||
+                t.contains("forgotten favorites")
     }
 
     private fun isSimilarMusicShelf(shelf: HomeShelf): Boolean {
         val t = shelf.title.lowercase(Locale.US)
         val s = shelf.strapline?.lowercase(Locale.US).orEmpty()
         return t.contains("similar") ||
-            s.contains("similar") ||
-            t.contains("mixed for you") ||
-            t.contains("recommended") ||
-            t.contains("start radio") ||
-            t.contains("for you") ||
-            s.contains("because you")
+                s.contains("similar") ||
+                t.contains("mixed for you") ||
+                t.contains("recommended") ||
+                t.contains("start radio") ||
+                t.contains("for you") ||
+                s.contains("because you")
     }
 
     private fun isTrendingShelf(shelf: HomeShelf): Boolean {
         val t = shelf.title.lowercase(Locale.US)
         return t.contains("trending") ||
-            t.contains("top music") ||
-            t.contains("top songs") ||
-            t.contains("charts")
+                t.contains("top music") ||
+                t.contains("top songs") ||
+                t.contains("charts")
     }
 
     private fun isNewReleasesShelf(shelf: HomeShelf): Boolean {
         val t = shelf.title.lowercase(Locale.US)
         return t.contains("new release") ||
-            t.contains("new albums") ||
-            t.contains("albums & singles") ||
-            t.contains("new music")
+                t.contains("new albums") ||
+                t.contains("albums & singles") ||
+                t.contains("new music")
     }
 
     suspend fun fetchLibraryPlaylists(): List<PlaylistSummary> = withContext(Dispatchers.IO) {
@@ -797,8 +867,8 @@ class InnerTubeRepository {
         }
 
         val isLikedMusic = playlistId == "LM" ||
-            playlistId == "VLLM" ||
-            playlistId == "FEmusic_liked_videos"
+                playlistId == "VLLM" ||
+                playlistId == "FEmusic_liked_videos"
 
         if (isLikedMusic) {
             val vllmResult = runCatching { fetchBrowseTracks("VLLM") }.getOrNull()
@@ -980,12 +1050,11 @@ class InnerTubeRepository {
 
         if (contentType == null || contentLength == null) {
             runCatching {
-                val okHttp = OkHttpClient.Builder().followRedirects(true).build()
                 val reqBuilder = Request.Builder().url(url).head()
                 reqBuilder.header("Origin", "https://music.youtube.com")
                 reqBuilder.header("Referer", "https://music.youtube.com/")
                 stream.headers.forEach { (k, v) -> if (v.isNotBlank()) reqBuilder.header(k, v) }
-                okHttp.newCall(reqBuilder.build()).execute().use { resp ->
+                okHttpClient.newCall(reqBuilder.build()).execute().use { resp ->
                     if (contentType == null) contentType = resp.header("Content-Type")
                     if (contentLength == null) contentLength = resp.header("Content-Length")?.toLongOrNull()
                 }
@@ -1001,7 +1070,7 @@ class InnerTubeRepository {
             itag == 140 || contentType?.contains("mp4", true) == true || contentType?.contains("m4a", true) == true ->
                 "AAC-LC (M4A)"
             itag == 139 -> "HE-AAC (M4A)"
-            !contentType.isNullOrBlank() -> contentType!!
+            !contentType.isNullOrBlank() -> contentType
             else -> "Audio Stream"
         }
 
@@ -1015,7 +1084,7 @@ class InnerTubeRepository {
             else -> {
                 val durSec = track.durationSeconds
                 if (contentLength != null && durSec != null && durSec > 0) {
-                    ((contentLength!! * 8L) / durSec / 1000L).toInt().coerceAtLeast(32)
+                    ((contentLength * 8L) / durSec / 1000L).toInt().coerceAtLeast(32)
                 } else {
                     null
                 }
@@ -1060,7 +1129,6 @@ class InnerTubeRepository {
         val lyricsRoot = (json.parseToJsonElement(browseResponse.bodyAsText()) as? JsonObject)
             ?: return@withContext null
 
-        // 1. Check synced timedLyricsRenderer
         val timedRenderer = collectObjectsByKey(lyricsRoot, "timedLyricsRenderer").firstOrNull()
         if (timedRenderer != null) {
             val timedArray = timedRenderer["timedLyricsData"] as? JsonArray
@@ -1084,7 +1152,6 @@ class InnerTubeRepository {
             }
         }
 
-        // 2. Fallback to plain musicDescriptionShelfRenderer
         val descShelf = collectObjectsByKey(lyricsRoot, "musicDescriptionShelfRenderer").firstOrNull()
             ?: return@withContext null
         val rawLyrics = extractRunsText(descShelf["description"])
@@ -1262,17 +1329,17 @@ class InnerTubeRepository {
             shelfTitleLower.contains("single") || shelfTitleLower.contains("ep") -> ArtistDiscographyKind.SINGLES
             shelfTitleLower.contains("album") -> ArtistDiscographyKind.ALBUMS
             shelfTitleLower.contains("featured") ||
-                item.browseId.startsWith("VL") ||
-                item.browseId.startsWith("PL") ||
-                item.browseId.startsWith("RDCLAK") -> ArtistDiscographyKind.FEATURED
+                    item.browseId.startsWith("VL") ||
+                    item.browseId.startsWith("PL") ||
+                    item.browseId.startsWith("RDCLAK") -> ArtistDiscographyKind.FEATURED
             item.artist.contains("Single", ignoreCase = true) ||
-                item.artist.contains("EP", ignoreCase = true) -> ArtistDiscographyKind.SINGLES
+                    item.artist.contains("EP", ignoreCase = true) -> ArtistDiscographyKind.SINGLES
             else -> ArtistDiscographyKind.ALBUMS
         }
 
         val sectionNodes = extractOrderedSectionNodes(root).ifEmpty {
             collectObjectsByKey(root, "musicShelfRenderer").map { JsonObject(mapOf("musicShelfRenderer" to it)) } +
-                collectObjectsByKey(root, "musicCarouselShelfRenderer").map { JsonObject(mapOf("musicCarouselShelfRenderer" to it)) }
+                    collectObjectsByKey(root, "musicCarouselShelfRenderer").map { JsonObject(mapOf("musicCarouselShelfRenderer" to it)) }
         }
 
         for (node in sectionNodes) {
@@ -1288,13 +1355,13 @@ class InnerTubeRepository {
                         ?.values?.firstOrNull { it is JsonObject } as? JsonObject
                     topSongsSeeAllEndpoint = parseBrowsePair(shelf["bottomEndpoint"] as? JsonObject)
                         ?: extractTitleEndpoint(shelf["bottomText"])
-                        ?: parseBrowsePair(
+                                ?: parseBrowsePair(
                             (headerRenderer?.get("moreContentButton") as? JsonObject)
                                 ?.let { it["buttonRenderer"] as? JsonObject }
                                 ?.let { it["navigationEndpoint"] as? JsonObject },
                         )
-                        ?: extractTitleEndpoint(shelf["title"])
-                        ?: extractTitleEndpoint(headerRenderer?.get("title"))
+                                ?: extractTitleEndpoint(shelf["title"])
+                                ?: extractTitleEndpoint(headerRenderer?.get("title"))
                 }
             }
 
@@ -1371,7 +1438,6 @@ class InnerTubeRepository {
             }
         }
 
-        // Load full "See All" Top Songs, Albums, Singles & EPs, and Featured playlists concurrently with params + continuations
         coroutineScope {
             val allSongsDeferred = topSongsSeeAllEndpoint?.let { (songsBrowseId, songsParams) ->
                 async {
@@ -1624,9 +1690,9 @@ class InnerTubeRepository {
         val cleanArtist = parts.firstOrNull { part ->
             val lower = part.lowercase(Locale.US)
             lower != "song" &&
-                lower != "video" &&
-                !lower.endsWith("plays") &&
-                !lower.endsWith("views")
+                    lower != "video" &&
+                    !lower.endsWith("plays") &&
+                    !lower.endsWith("views")
         } ?: defaultArtist
         val thumb = extractBestThumbnail(item["thumbnailRenderer"])
             ?: extractBestThumbnail(item["thumbnail"])
@@ -1656,14 +1722,14 @@ class InnerTubeRepository {
             ?.contentOrNull
 
         val isSupportedId = rawBrowseId.startsWith("MPRE") ||
-            rawBrowseId.startsWith("OLAK") ||
-            rawBrowseId.startsWith("VL") ||
-            rawBrowseId.startsWith("PL") ||
-            rawBrowseId.startsWith("RDCLAK") ||
-            rawBrowseId.startsWith("UC") ||
-            pageType == "MUSIC_PAGE_TYPE_ALBUM" ||
-            pageType == "MUSIC_PAGE_TYPE_PLAYLIST" ||
-            pageType == "MUSIC_PAGE_TYPE_ARTIST"
+                rawBrowseId.startsWith("OLAK") ||
+                rawBrowseId.startsWith("VL") ||
+                rawBrowseId.startsWith("PL") ||
+                rawBrowseId.startsWith("RDCLAK") ||
+                rawBrowseId.startsWith("UC") ||
+                pageType == "MUSIC_PAGE_TYPE_ALBUM" ||
+                pageType == "MUSIC_PAGE_TYPE_PLAYLIST" ||
+                pageType == "MUSIC_PAGE_TYPE_ARTIST"
         if (!isSupportedId) return null
 
         val title = extractRunsText(item["title"]).ifBlank { return null }
@@ -1765,14 +1831,14 @@ class InnerTubeRepository {
         val filteredParts = secondaryParts.filterNot { part ->
             val lower = part.lowercase(Locale.US)
             lower == "song" ||
-                lower == "video" ||
-                lower == "album" ||
-                lower == "single" ||
-                lower == "ep" ||
-                lower == "playlist" ||
-                lower.endsWith("plays") ||
-                lower.endsWith("views") ||
-                parseDurationSeconds(part) != null
+                    lower == "video" ||
+                    lower == "album" ||
+                    lower == "single" ||
+                    lower == "ep" ||
+                    lower == "playlist" ||
+                    lower.endsWith("plays") ||
+                    lower.endsWith("views") ||
+                    parseDurationSeconds(part) != null
         }
         val artist = filteredParts.firstOrNull().orEmpty().ifBlank {
             secondaryRuns.joinText().ifBlank { "YouTube Music" }
@@ -1783,11 +1849,11 @@ class InnerTubeRepository {
                 .firstOrNull { part ->
                     val lower = part.lowercase(Locale.US)
                     lower.isNotEmpty() &&
-                        lower != "song" &&
-                        lower != "video" &&
-                        !lower.endsWith("plays") &&
-                        !lower.endsWith("views") &&
-                        parseDurationSeconds(part) == null
+                            lower != "song" &&
+                            lower != "video" &&
+                            !lower.endsWith("plays") &&
+                            !lower.endsWith("views") &&
+                            parseDurationSeconds(part) == null
                 }
 
         val durationSeconds = secondaryParts
@@ -1897,7 +1963,7 @@ class InnerTubeRepository {
             .firstNotNullOfOrNull { ep ->
                 (ep["browseId"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.startsWith("UC") }
             }
-            ?: return null
+        ?: return null
         val flexRuns = extractFlexColumnRuns(item)
         val name = flexRuns.getOrNull(0)?.joinText().orEmpty().ifBlank { return null }
         val subtitle = flexRuns.getOrNull(1)?.joinText()

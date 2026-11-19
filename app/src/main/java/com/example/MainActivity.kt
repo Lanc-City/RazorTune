@@ -23,7 +23,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -81,6 +80,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -96,13 +96,16 @@ import androidx.navigation.toRoute
 import com.example.data.OfflineDownloadManager
 import com.example.model.DarkThemeMode
 import com.example.model.DownloadStatus
+import com.example.model.HomeMoodChip
 import com.example.model.NavBarStyle
+import com.example.model.SearchFilterOption
 import com.example.model.Track
 import com.example.ui.components.AddToPlaylistDialog
 import com.example.ui.components.MiniPlayerBar
 import com.example.ui.components.NowPlayingSheet
 import com.example.ui.components.TrackActionsSheet
 import com.example.ui.components.TrackDetailsDialog
+import com.example.ui.screens.AboutScreen
 import com.example.ui.screens.AccountScreen
 import com.example.ui.screens.ArtistScreen
 import com.example.ui.screens.AudioEffectsScreen
@@ -129,6 +132,7 @@ import com.example.ui.viewmodel.ThemeViewModel
 import com.example.ui.viewmodel.TrackActionsViewModel
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import com.example.model.SearchBarStyle
 
 @Serializable
 data object SearchRoute
@@ -156,6 +160,9 @@ data object BatteryPerformanceRoute
 
 @Serializable
 data object AudioEffectsRoute
+
+@Serializable
+data object AboutRoute
 
 @Serializable
 data class PlaylistDetailRoute(
@@ -246,6 +253,10 @@ fun RazorTuneApp(
     val performanceSettings by performanceViewModel.settings.collectAsStateWithLifecycle()
     val audioEffectsSettings by audioEffectsViewModel.settings.collectAsStateWithLifecycle()
 
+    LaunchedEffect(themeSettings.customDnsEnabled) {
+        RazorTuneApplication.instance.innerTubeRepository.setCustomDnsEnabled(themeSettings.customDnsEnabled)
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     val powerManager = remember(context) {
         context.getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -283,7 +294,7 @@ fun RazorTuneApp(
         }
     }
     val reduceVisualEffects = performanceSettings.reduceVisualEffects ||
-        (performanceSettings.autoReduceOnLowBattery && isSystemPowerSaveMode)
+            (performanceSettings.autoReduceOnLowBattery && isSystemPowerSaveMode)
 
     val downloadStates by trackActionsViewModel.downloadStates.collectAsStateWithLifecycle()
     val downloadedTracks by storageViewModel.downloadedTracks.collectAsStateWithLifecycle()
@@ -391,12 +402,13 @@ fun RazorTuneApp(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val isInSettingsFlow = currentDestination?.hasRoute<SettingsRoute>() == true ||
-        currentDestination?.hasRoute<LookAndFeelRoute>() == true ||
-        currentDestination?.hasRoute<AccountRoute>() == true ||
-        currentDestination?.hasRoute<StorageRoute>() == true ||
-        currentDestination?.hasRoute<StatsRoute>() == true ||
-        currentDestination?.hasRoute<BatteryPerformanceRoute>() == true ||
-        currentDestination?.hasRoute<AudioEffectsRoute>() == true
+            currentDestination?.hasRoute<LookAndFeelRoute>() == true ||
+            currentDestination?.hasRoute<AccountRoute>() == true ||
+            currentDestination?.hasRoute<StorageRoute>() == true ||
+            currentDestination?.hasRoute<StatsRoute>() == true ||
+            currentDestination?.hasRoute<BatteryPerformanceRoute>() == true ||
+            currentDestination?.hasRoute<AudioEffectsRoute>() == true ||
+            currentDestination?.hasRoute<AboutRoute>() == true
 
     fun navigateToTab(route: Any) {
         navController.navigate(route) {
@@ -411,8 +423,8 @@ fun RazorTuneApp(
     val liquidGlass = themeSettings.liquidGlass
     val glassT = themeSettings.glassIntensity.coerceIn(0f, 1f)
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val useRail = maxWidth >= 600.dp
+    Box(modifier = Modifier.fillMaxSize()) {
+        val useRail = false
 
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -490,7 +502,7 @@ fun RazorTuneApp(
                                 is SearchRoute -> currentDestination?.hasRoute<SearchRoute>() == true
                                 is PlaylistsRoute ->
                                     currentDestination?.hasRoute<PlaylistsRoute>() == true ||
-                                        currentDestination?.hasRoute<PlaylistDetailRoute>() == true
+                                            currentDestination?.hasRoute<PlaylistDetailRoute>() == true
                                 else -> false
                             }
                             val label = stringResource(tab.labelRes)
@@ -534,27 +546,27 @@ fun RazorTuneApp(
                                     currentTrackId = playbackState.currentTrack?.videoId,
                                     thumbnailCornerRadius = themeSettings.thumbnailCornerRadius,
                                     contentLayoutStyle = themeSettings.contentLayoutStyle,
-                                     searchBarStyle = themeSettings.searchBarStyle,
+                                    searchBarStyle = themeSettings.searchBarStyle,
                                     downloadStates = downloadStates,
-                                    onQueryChange = searchViewModel::onQueryChange,
-                                    onSelectFilter = searchViewModel::selectFilter,
-                                    onSubmitSearch = searchViewModel::submitSearch,
-                                    onRefreshHome = searchViewModel::refreshHome,
+                                    onQueryChange = { q: String -> searchViewModel.onQueryChange(q) },
+                                    onSelectFilter = { f: SearchFilterOption -> searchViewModel.selectFilter(f) },
+                                    onSubmitSearch = { searchViewModel.submitSearch() },
+                                    onRefreshHome = { searchViewModel.refreshHome() },
                                     onOpenStats = { navController.navigate(StatsRoute) },
                                     onOpenSettings = { navController.navigate(SettingsRoute) },
-                                    onPlayTrack = ::playSingleWithQueue,
-                                    onOpenPlaylistOrAlbum = { id, title ->
+                                    onPlayTrack = { track: Track, queue: List<Track> -> playSingleWithQueue(track, queue) },
+                                    onOpenPlaylistOrAlbum = { id: String, title: String ->
                                         navController.navigate(PlaylistDetailRoute(id, title))
                                     },
-                                    onOpenArtist = { artistId, artistName ->
+                                    onOpenArtist = { artistId: String, artistName: String ->
                                         navController.navigate(ArtistRoute(artistId, artistName))
                                     },
-                                    onLoadMore = searchViewModel::loadMoreResults,
+                                    onLoadMore = { searchViewModel.loadMoreResults() },
                                     moodChips = moodChips,
                                     selectedMood = selectedMood,
                                     isLoadingMood = isLoadingMood,
-                                    onSelectMoodChip = searchViewModel::selectMoodChip,
-                                    onOpenTrackMenu = { track -> menuTrack = track },
+                                    onSelectMoodChip = { chip: HomeMoodChip -> searchViewModel.selectMoodChip(chip) },
+                                    onOpenTrackMenu = { track: Track -> menuTrack = track },
                                 )
                             }
 
@@ -566,14 +578,14 @@ fun RazorTuneApp(
                                     currentTrackId = playbackState.currentTrack?.videoId,
                                     thumbnailCornerRadius = themeSettings.thumbnailCornerRadius,
                                     contentLayoutStyle = themeSettings.contentLayoutStyle,
-                                    onRefresh = playlistsViewModel::refresh,
+                                    onRefresh = { playlistsViewModel.refresh() },
                                     onNavigateToAccount = { navController.navigate(AccountRoute) },
                                     onOpenPlaylist = { playlist ->
                                         navController.navigate(
                                             PlaylistDetailRoute(playlist.id, playlist.title),
                                         )
                                     },
-                                    onPlayTracks = ::playTracks,
+                                    onPlayTracks = { tracks, idx -> playTracks(tracks, idx) },
                                     onOpenTrackMenu = { track -> menuTrack = track },
                                 )
                             }
@@ -600,7 +612,7 @@ fun RazorTuneApp(
                                     onRetry = {
                                         detailViewModel.reload(route.playlistId, route.title)
                                     },
-                                    onPlayTracks = ::playTracks,
+                                    onPlayTracks = { tracks, idx -> playTracks(tracks, idx) },
                                     onDownloadAll = { tracks ->
                                         trackActionsViewModel.downloadAll(tracks, ::showFeedback)
                                     },
@@ -628,7 +640,7 @@ fun RazorTuneApp(
                                     downloadStates = downloadStates,
                                     onBack = { navController.popBackStack() },
                                     onRetry = { artistViewModel.reload(route.artistId) },
-                                    onPlayTracks = ::playTracks,
+                                    onPlayTracks = { tracks, idx -> playTracks(tracks, idx) },
                                     onOpenAlbum = { albumBrowseId, albumTitle ->
                                         navController.navigate(PlaylistDetailRoute(albumBrowseId, albumTitle))
                                     },
@@ -667,10 +679,15 @@ fun RazorTuneApp(
                                     onBack = { navController.popBackStack() },
                                     onOpenAccountAndSync = { navController.navigate(AccountRoute) },
                                     onOpenLookAndFeel = { navController.navigate(LookAndFeelRoute) },
+                                    onToggleCustomDns = { enabled: Boolean ->
+                                        themeViewModel.setCustomDnsEnabled(enabled)
+                                        showFeedback(if (enabled) "Cloudflare DoH Enabled" else "Cloudflare DoH Disabled")
+                                    },
                                     onOpenStorage = { navController.navigate(StorageRoute) },
                                     onOpenStats = { navController.navigate(StatsRoute) },
                                     onOpenBatteryPerformance = { navController.navigate(BatteryPerformanceRoute) },
                                     onOpenAudioEffects = { navController.navigate(AudioEffectsRoute) },
+                                    onOpenAbout = { navController.navigate(AboutRoute) },
                                 )
                             }
 
@@ -686,7 +703,7 @@ fun RazorTuneApp(
                                     uiState = statsUiState,
                                     thumbnailCornerRadius = themeSettings.thumbnailCornerRadius,
                                     onBack = { navController.popBackStack() },
-                                    onSelectRange = statsViewModel::selectRange,
+                                    onSelectRange = { range -> statsViewModel.selectRange(range) },
                                     onClearStats = {
                                         statsViewModel.clearStats()
                                         showFeedback("Cleared listening history")
@@ -700,7 +717,7 @@ fun RazorTuneApp(
                                             onUnavailable = ::showFeedback,
                                         )
                                     },
-                                    onPlayTrack = ::playSingleWithQueue,
+                                    onPlayTrack = { track: Track, queue: List<Track> -> playSingleWithQueue(track, queue) },
                                     onShuffleTopTracks = { tracks ->
                                         val shuffled = tracks.shuffled()
                                         if (shuffled.isNotEmpty()) {
@@ -717,27 +734,27 @@ fun RazorTuneApp(
                                 LookAndFeelScreen(
                                     settings = themeSettings,
                                     onBack = { navController.popBackStack() },
-                                    onSetDynamicArtworkTheme = themeViewModel::setDynamicArtworkTheme,
-                                    onSetDarkThemeMode = themeViewModel::setDarkThemeMode,
-                                    onSetPureBlack = themeViewModel::setPureBlack,
-                                    onSetPlayerBackgroundStyle = themeViewModel::setPlayerBackgroundStyle,
-                                    onSetLiquidGlass = themeViewModel::setLiquidGlass,
-                                    onSetGlassIntensity = themeViewModel::setGlassIntensity,
-                                    onSetPlayerButtonsLayout = themeViewModel::setPlayerButtonsLayout,
-                                    onSetNowPlayingStyle = themeViewModel::setNowPlayingStyle,
-                                    onSetPlayerDesignStyle = themeViewModel::setPlayerDesignStyle,
-                                    onSetPlayerSliderStyle = themeViewModel::setPlayerSliderStyle,
-                                    onSetMiniPlayerStyle = themeViewModel::setMiniPlayerStyle,
-                                    onSetNavBarStyle = themeViewModel::setNavBarStyle,
-                                    onSetContentLayoutStyle = themeViewModel::setContentLayoutStyle,
-                                    onSetMiniPlayerCornerRadiusDp = themeViewModel::setMiniPlayerCornerRadiusDp,
-                                    onSetMiniPlayerShowLike = themeViewModel::setMiniPlayerShowLike,
-                                    onSetMiniPlayerShowPrevious = themeViewModel::setMiniPlayerShowPrevious,
-                                    onSetMiniPlayerSwipeToSkip = themeViewModel::setMiniPlayerSwipeToSkip,
-                                    onSetThumbnailCornerRadius = themeViewModel::setThumbnailCornerRadius,
-                                    onSetShowSpectralVisualizer = themeViewModel::setShowSpectralVisualizer,
-                                    onSetVisualizerStyle = themeViewModel::setVisualizerStyle,
-                                     onSetSearchBarStyle = themeViewModel::setSearchBarStyle,
+                                    onSetDynamicArtworkTheme = { b -> themeViewModel.setDynamicArtworkTheme(b) },
+                                    onSetDarkThemeMode = { mode -> themeViewModel.setDarkThemeMode(mode) },
+                                    onSetPureBlack = { b -> themeViewModel.setPureBlack(b) },
+                                    onSetPlayerBackgroundStyle = { style -> themeViewModel.setPlayerBackgroundStyle(style) },
+                                    onSetLiquidGlass = { b -> themeViewModel.setLiquidGlass(b) },
+                                    onSetGlassIntensity = { intensity -> themeViewModel.setGlassIntensity(intensity) },
+                                    onSetPlayerButtonsLayout = { layout -> themeViewModel.setPlayerButtonsLayout(layout) },
+                                    onSetNowPlayingStyle = { style -> themeViewModel.setNowPlayingStyle(style) },
+                                    onSetPlayerDesignStyle = { style -> themeViewModel.setPlayerDesignStyle(style) },
+                                    onSetPlayerSliderStyle = { style -> themeViewModel.setPlayerSliderStyle(style) },
+                                    onSetMiniPlayerStyle = { style -> themeViewModel.setMiniPlayerStyle(style) },
+                                    onSetNavBarStyle = { style -> themeViewModel.setNavBarStyle(style) },
+                                    onSetContentLayoutStyle = { style -> themeViewModel.setContentLayoutStyle(style) },
+                                    onSetMiniPlayerCornerRadiusDp = { r -> themeViewModel.setMiniPlayerCornerRadiusDp(r) },
+                                    onSetMiniPlayerShowLike = { b -> themeViewModel.setMiniPlayerShowLike(b) },
+                                    onSetMiniPlayerShowPrevious = { b -> themeViewModel.setMiniPlayerShowPrevious(b) },
+                                    onSetMiniPlayerSwipeToSkip = { b -> themeViewModel.setMiniPlayerSwipeToSkip(b) },
+                                    onSetThumbnailCornerRadius = { r -> themeViewModel.setThumbnailCornerRadius(r) },
+                                    onSetShowSpectralVisualizer = { b -> themeViewModel.setShowSpectralVisualizer(b) },
+                                    onSetVisualizerStyle = { style -> themeViewModel.setVisualizerStyle(style) },
+                                    onSetSearchBarStyle = { style -> themeViewModel.setSearchBarStyle(style) },
                                 )
                             }
 
@@ -746,7 +763,7 @@ fun RazorTuneApp(
                                     uiState = accountState,
                                     isSyncingPlaylists = playlistsState is PlaylistsUiState.Loading,
                                     onBack = { navController.popBackStack() },
-                                    onCookieCaptured = accountViewModel::onCookieCaptured,
+                                    onCookieCaptured = { cookie -> accountViewModel.onCookieCaptured(cookie) },
                                     onSyncPlaylistsNow = {
                                         playlistsViewModel.refresh()
                                         showFeedback("Syncing YouTube Music playlists…")
@@ -763,8 +780,8 @@ fun RazorTuneApp(
                                     cacheSizeBytes = cacheSizeBytes,
                                     downloadOverWifiOnly = downloadOverWifiOnly,
                                     onBack = { navController.popBackStack() },
-                                    onRefreshStats = storageViewModel::refreshStorageStats,
-                                    onSetDownloadOverWifiOnly = storageViewModel::setDownloadOverWifiOnly,
+                                    onRefreshStats = { storageViewModel.refreshStorageStats() },
+                                    onSetDownloadOverWifiOnly = { b -> storageViewModel.setDownloadOverWifiOnly(b) },
                                     onRemoveTrack = { videoId ->
                                         storageViewModel.removeDownloadedTrack(videoId)
                                         showFeedback("Removed offline song")
@@ -786,11 +803,11 @@ fun RazorTuneApp(
                                 BatteryPerformanceScreen(
                                     settings = performanceSettings,
                                     onBack = { navController.popBackStack() },
-                                    onSetAudioQuality = performanceViewModel::setAudioQuality,
-                                    onSetSkipSilence = performanceViewModel::setSkipSilence,
-                                    onSetPreloadNextTrack = performanceViewModel::setPreloadNextTrack,
-                                    onSetReduceVisualEffects = performanceViewModel::setReduceVisualEffects,
-                                    onSetAutoReduceOnLowBattery = performanceViewModel::setAutoReduceOnLowBattery,
+                                    onSetAudioQuality = { q -> performanceViewModel.setAudioQuality(q) },
+                                    onSetSkipSilence = { b -> performanceViewModel.setSkipSilence(b) },
+                                    onSetPreloadNextTrack = { b -> performanceViewModel.setPreloadNextTrack(b) },
+                                    onSetReduceVisualEffects = { b -> performanceViewModel.setReduceVisualEffects(b) },
+                                    onSetAutoReduceOnLowBattery = { b -> performanceViewModel.setAutoReduceOnLowBattery(b) },
                                 )
                             }
 
@@ -799,15 +816,31 @@ fun RazorTuneApp(
                                     settings = audioEffectsSettings,
                                     audioSessionId = audioSessionId,
                                     onBack = { navController.popBackStack() },
-                                    onSetEnabled = audioEffectsViewModel::setEnabled,
-                                    onSelectPreset = audioEffectsViewModel::selectPreset,
-                                    onSetBandLevel = audioEffectsViewModel::setBandLevel,
-                                    onSetBassBoost = audioEffectsViewModel::setBassBoost,
-                                    onSetVirtualizer = audioEffectsViewModel::setVirtualizer,
-                                    onSetLoudnessGain = audioEffectsViewModel::setLoudnessGain,
+                                    onSetEnabled = { b -> audioEffectsViewModel.setEnabled(b) },
+                                    onSelectPreset = { p -> audioEffectsViewModel.selectPreset(p) },
+                                    onSetBandLevel = { band, level -> audioEffectsViewModel.setBandLevel(band, level) },
+                                    onSetBassBoost = { strength -> audioEffectsViewModel.setBassBoost(strength) },
+                                    onSetVirtualizer = { strength -> audioEffectsViewModel.setVirtualizer(strength) },
+                                    onSetLoudnessGain = { gain -> audioEffectsViewModel.setLoudnessGain(gain) },
                                     onResetAll = {
                                         audioEffectsViewModel.resetAll()
                                         showFeedback("Reset Audio Effects & EQ to Flat")
+                                    },
+                                )
+                            }
+
+                            composable<AboutRoute> {
+                                AboutScreen(
+                                    onBack = { navController.popBackStack() },
+                                    onOpenLicenses = {
+                                        showFeedback("Open source libraries & licenses")
+                                    },
+                                    onOpenGitHub = {
+                                        val intent = Intent(
+                                            Intent.ACTION_VIEW,
+                                            "https://github.com".toUri(),
+                                        )
+                                        runCatching { context.startActivity(intent) }
                                     },
                                 )
                             }
@@ -857,13 +890,13 @@ fun RazorTuneApp(
             visualizerMagnitudes = visualizerMagnitudes,
             hasPromptedAudioPermission = audioPermissionRequested,
             onMarkAudioPermissionPrompted = { audioPermissionRequested = true },
-            onVisualizerActiveChange = playbackController.audioVisualizerManager::setActive,
+            onVisualizerActiveChange = { active -> playbackController.audioVisualizerManager.setActive(active) },
             onDismiss = { showNowPlayingSheet = false },
             onTogglePlayPause = { playbackController.togglePlayPause() },
             onSkipNext = { playbackController.skipToNext() },
             onSkipPrevious = { playbackController.skipToPrevious() },
-            onSeekTo = { playbackController.seekTo(it) },
-            onSelectQueueIndex = { playbackController.skipToQueueIndex(it) },
+            onSeekTo = { pos -> playbackController.seekTo(pos) },
+            onSelectQueueIndex = { idx -> playbackController.skipToQueueIndex(idx) },
             onToggleLike = { trackActionsViewModel.toggleLike(currentTrack, ::showFeedback) },
             onShare = { shareTrack(currentTrack) },
             onToggleLyrics = { showLyrics = !showLyrics },
@@ -977,7 +1010,7 @@ private fun isTabSelected(
     is SearchRoute -> currentDestination?.hasRoute<SearchRoute>() == true
     is PlaylistsRoute ->
         currentDestination?.hasRoute<PlaylistsRoute>() == true ||
-            currentDestination?.hasRoute<PlaylistDetailRoute>() == true
+                currentDestination?.hasRoute<PlaylistDetailRoute>() == true
     else -> false
 }
 

@@ -1,10 +1,6 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.runtime.saveable.rememberSaveable
-import com.example.model.SearchBarStyle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,16 +24,20 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Login
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Person
@@ -47,8 +47,11 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -90,7 +93,10 @@ import com.example.model.Track
 import com.example.ui.components.TrackRow
 import com.example.ui.viewmodel.HomeUiState
 import com.example.ui.viewmodel.SearchUiState
+import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.example.model.SearchBarStyle
 
 @Composable
 fun SearchScreen(
@@ -109,6 +115,7 @@ fun SearchScreen(
     onRefreshHome: () -> Unit,
     onOpenStats: () -> Unit = {},
     onOpenSettings: () -> Unit,
+    onOpenAccount: () -> Unit = onOpenSettings,
     onPlayTrack: (Track, List<Track>) -> Unit,
     onOpenTrackMenu: (Track) -> Unit,
     onOpenPlaylistOrAlbum: (id: String, title: String) -> Unit,
@@ -122,6 +129,7 @@ fun SearchScreen(
 ) {
     val focusManager = LocalFocusManager.current
     var isSearchExpanded by rememberSaveable { mutableStateOf(false) }
+    var showProfileDropdown by remember { mutableStateOf(false) }
 
     LaunchedEffect(query) {
         if (query.isNotBlank()) {
@@ -181,23 +189,136 @@ fun SearchScreen(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        IconButton(
-                            onClick = onOpenSettings,
-                            modifier = Modifier
-                                .minimumInteractiveComponentSize()
-                                .testTag("settings_button"),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Settings,
-                                contentDescription = "Settings",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+
+                        // Modern Profile Avatar Button with Custom Dropdown Menu
+                        Box {
+                            IconButton(
+                                onClick = { showProfileDropdown = true },
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .testTag("profile_avatar_button"),
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    modifier = Modifier.size(36.dp),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.AccountCircle,
+                                            contentDescription = "Profile and Account",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(26.dp),
+                                        )
+                                    }
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = showProfileDropdown,
+                                onDismissRequest = { showProfileDropdown = false },
+                                modifier = Modifier
+                                    .width(280.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text(
+                                                text = "Sign in to YouTube",
+                                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                            Text(
+                                                text = "Connect account & sync library",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        showProfileDropdown = false
+                                        onOpenAccount()
+                                    },
+                                    leadingIcon = {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            modifier = Modifier.size(36.dp),
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Login,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    modifier = Modifier.size(20.dp),
+                                                )
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.padding(vertical = 4.dp),
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 12.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Statistics", style = MaterialTheme.typography.bodyLarge) },
+                                    onClick = {
+                                        showProfileDropdown = false
+                                        onOpenStats()
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Rounded.BarChart,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Settings", style = MaterialTheme.typography.bodyLarge) },
+                                    onClick = {
+                                        showProfileDropdown = false
+                                        onOpenSettings()
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Settings,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    },
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 12.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                            Text(
+                                                text = "RazorTune (1.0.0)",
+                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                            Text(
+                                                text = "GPL-3.0 Open Source",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    },
+                                    onClick = { },
+                                    enabled = false,
+                                )
+                            }
                         }
                     }
                 }
 
                 val showTopSearchBar = searchBarStyle != SearchBarStyle.FLOATING_BOTTOM &&
-                    (searchBarStyle != SearchBarStyle.HEADER_EXPAND || isSearchExpanded || query.isNotBlank())
+                        (searchBarStyle != SearchBarStyle.HEADER_EXPAND || isSearchExpanded || query.isNotBlank())
 
                 AnimatedVisibility(visible = showTopSearchBar) {
                     Column {
@@ -328,335 +449,338 @@ fun SearchScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-            val showHomeFeed = query.isBlank() || uiState is SearchUiState.Idle
-            if (showHomeFeed) {
-                if (moodChips.isNotEmpty()) {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(vertical = 2.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 6.dp)
-                            .testTag("home_mood_chips_row"),
-                    ) {
-                        items(moodChips, key = { it.title }) { chip ->
-                            val selected = selectedMood?.title == chip.title
-                            FilterChip(
-                                selected = selected,
-                                onClick = { onSelectMoodChip(chip) },
-                                label = {
-                                    Text(
-                                        text = chip.title,
-                                        style = MaterialTheme.typography.labelLarge,
-                                    )
-                                },
-                                shape = RoundedCornerShape(50.dp),
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                ),
-                                modifier = Modifier
-                                    .heightIn(min = 38.dp)
-                                    .testTag("mood_chip_${chip.title.lowercase().replace(" ", "_")}"),
-                            )
-                        }
-                    }
-                    if (isLoadingMood) {
-                        androidx.compose.material3.LinearProgressIndicator(
+                val showHomeFeed = query.isBlank() || uiState is SearchUiState.Idle
+                if (showHomeFeed) {
+                    if (moodChips.isNotEmpty()) {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(vertical = 2.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(2.dp)
-                                .testTag("home_mood_loading_indicator"),
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
-                }
-
-                HomeFeedContent(
-                    homeState = homeState,
-                    currentTrackId = currentTrackId,
-                    thumbnailCornerRadius = thumbnailCornerRadius,
-                    contentLayoutStyle = contentLayoutStyle,
-                    onRefreshHome = onRefreshHome,
-                    onPlayTrack = onPlayTrack,
-                    onOpenPlaylistOrAlbum = onOpenPlaylistOrAlbum,
-                )
-            } else {
-                when (uiState) {
-                    is SearchUiState.Idle -> Unit
-
-                    is SearchUiState.Loading -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
+                                .padding(bottom = 6.dp)
+                                .testTag("home_mood_chips_row"),
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                                Text(
-                                    text = "Searching ${selectedFilter.label.lowercase()}…",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-
-                    is SearchUiState.Error -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                                modifier = Modifier.padding(24.dp),
-                            ) {
-                                Text(
-                                    text = uiState.message,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                                Button(
-                                    onClick = onSubmitSearch,
+                            items(moodChips, key = { it.title }) { chip ->
+                                val selected = selectedMood?.title == chip.title
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { onSelectMoodChip(chip) },
+                                    label = {
+                                        Text(
+                                            text = chip.title,
+                                            style = MaterialTheme.typography.labelLarge,
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(50.dp),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    ),
                                     modifier = Modifier
-                                        .heightIn(min = 48.dp)
-                                        .testTag("search_retry_button"),
-                                ) {
-                                    Text("Retry")
-                                }
+                                        .heightIn(min = 38.dp)
+                                        .testTag("mood_chip_${chip.title.lowercase().replace(" ", "_")}"),
+                                )
                             }
                         }
+                        if (isLoadingMood) {
+                            androidx.compose.material3.LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(2.dp)
+                                    .testTag("home_mood_loading_indicator"),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
                     }
 
-                    is SearchUiState.Success -> {
-                        if (uiState.results.isEmpty()) {
+                    HomeFeedContent(
+                        homeState = homeState,
+                        currentTrackId = currentTrackId,
+                        thumbnailCornerRadius = thumbnailCornerRadius,
+                        contentLayoutStyle = contentLayoutStyle,
+                        downloadStates = downloadStates,
+                        onRefreshHome = onRefreshHome,
+                        onPlayTrack = onPlayTrack,
+                        onOpenTrackMenu = onOpenTrackMenu,
+                        onOpenPlaylistOrAlbum = onOpenPlaylistOrAlbum,
+                    )
+                } else {
+                    when (uiState) {
+                        is SearchUiState.Idle -> Unit
+
+                        is SearchUiState.Loading -> {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(
-                                    text = "No ${selectedFilter.label.lowercase()} matched \"$query\".",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                    Text(
+                                        text = "Searching ${selectedFilter.label.lowercase()}…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
-                        } else {
-                            val allSongs = remember(uiState.results) {
-                                uiState.results
-                                    .filterIsInstance<SearchResultItem.SongResult>()
-                                    .map { it.track }
-                            }
-                            val resultSpacing = when (contentLayoutStyle) {
-                                ContentLayoutStyle.COMPACT -> 2.dp
-                                ContentLayoutStyle.STANDARD -> 4.dp
-                                ContentLayoutStyle.SHOWCASE -> 8.dp
-                            }
+                        }
 
-                            val listState = rememberLazyListState()
-                            val currentOnLoadMore by rememberUpdatedState(onLoadMore)
-                            var lastRequestedToken by remember(query, selectedFilter) {
-                                mutableStateOf<String?>(null)
-                            }
-                            val shouldLoadMore by remember(
-                                uiState.results.size,
-                                uiState.continuationToken,
-                                uiState.isLoadingMore,
+                        is SearchUiState.Error -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center,
                             ) {
-                                derivedStateOf {
-                                    if (
-                                        uiState.results.isEmpty() ||
-                                        uiState.continuationToken.isNullOrBlank() ||
-                                        uiState.isLoadingMore
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    modifier = Modifier.padding(24.dp),
+                                ) {
+                                    Text(
+                                        text = uiState.message,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                    Button(
+                                        onClick = onSubmitSearch,
+                                        modifier = Modifier
+                                            .heightIn(min = 48.dp)
+                                            .testTag("search_retry_button"),
                                     ) {
-                                        false
-                                    } else {
-                                        val lastVisibleIndex =
-                                            listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-                                        lastVisibleIndex >= (uiState.results.lastIndex - 3).coerceAtLeast(0)
+                                        Text("Retry")
                                     }
                                 }
                             }
+                        }
 
-                            LaunchedEffect(shouldLoadMore, uiState.continuationToken, uiState.isLoadingMore) {
-                                val token = uiState.continuationToken
-                                if (shouldLoadMore && !token.isNullOrBlank()) {
-                                    if (token != lastRequestedToken) {
-                                        lastRequestedToken = token
-                                        currentOnLoadMore()
-                                    }
-                                } else if (!uiState.isLoadingMore) {
-                                    lastRequestedToken = null
+                        is SearchUiState.Success -> {
+                            if (uiState.results.isEmpty()) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = "No ${selectedFilter.label.lowercase()} matched \"$query\".",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
-                            }
+                            } else {
+                                val allSongs = remember(uiState.results) {
+                                    uiState.results
+                                        .filterIsInstance<SearchResultItem.SongResult>()
+                                        .map { it.track }
+                                }
+                                val resultSpacing = when (contentLayoutStyle) {
+                                    ContentLayoutStyle.COMPACT -> 2.dp
+                                    ContentLayoutStyle.STANDARD -> 4.dp
+                                    ContentLayoutStyle.SHOWCASE -> 8.dp
+                                }
 
-                            LazyColumn(
-                                state = listState,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .testTag("search_results_list"),
-                                contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
-                                verticalArrangement = Arrangement.spacedBy(resultSpacing),
-                            ) {
-                                items(uiState.results, key = { it.key }) { item ->
-                                    when (item) {
-                                        is SearchResultItem.SongResult -> {
-                                            TrackRow(
-                                                track = item.track,
-                                                isCurrentTrack = item.track.videoId == currentTrackId,
-                                                onClick = { onPlayTrack(item.track, allSongs) },
-                                                thumbnailCornerRadius = thumbnailCornerRadius,
-                                                contentLayoutStyle = contentLayoutStyle,
-                                                downloadStatus = downloadStates[item.track.videoId] ?: DownloadStatus.NOT_DOWNLOADED,
-                                                trailingContent = {
-                                                    IconButton(
-                                                        onClick = { onOpenTrackMenu(item.track) },
+                                val listState = rememberLazyListState()
+                                val currentOnLoadMore by rememberUpdatedState(onLoadMore)
+                                var lastRequestedToken by remember(query, selectedFilter) {
+                                    mutableStateOf<String?>(null)
+                                }
+                                val shouldLoadMore by remember(
+                                    uiState.results.size,
+                                    uiState.continuationToken,
+                                    uiState.isLoadingMore,
+                                ) {
+                                    derivedStateOf {
+                                        if (
+                                            uiState.results.isEmpty() ||
+                                            uiState.continuationToken.isNullOrBlank() ||
+                                            uiState.isLoadingMore
+                                        ) {
+                                            false
+                                        } else {
+                                            val lastVisibleIndex =
+                                                listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                                            lastVisibleIndex >= (uiState.results.lastIndex - 3).coerceAtLeast(0)
+                                        }
+                                    }
+                                }
+
+                                LaunchedEffect(shouldLoadMore, uiState.continuationToken, uiState.isLoadingMore) {
+                                    val token = uiState.continuationToken
+                                    if (shouldLoadMore && !token.isNullOrBlank()) {
+                                        if (token != lastRequestedToken) {
+                                            lastRequestedToken = token
+                                            currentOnLoadMore()
+                                        }
+                                    } else if (!uiState.isLoadingMore) {
+                                        lastRequestedToken = null
+                                    }
+                                }
+
+                                LazyColumn(
+                                    state = listState,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .testTag("search_results_list"),
+                                    contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
+                                    verticalArrangement = Arrangement.spacedBy(resultSpacing),
+                                ) {
+                                    items(uiState.results, key = { it.key }) { item ->
+                                        when (item) {
+                                            is SearchResultItem.SongResult -> {
+                                                TrackRow(
+                                                    track = item.track,
+                                                    isCurrentTrack = item.track.videoId == currentTrackId,
+                                                    onClick = { onPlayTrack(item.track, allSongs) },
+                                                    thumbnailCornerRadius = thumbnailCornerRadius,
+                                                    contentLayoutStyle = contentLayoutStyle,
+                                                    downloadStatus = downloadStates[item.track.videoId] ?: DownloadStatus.NOT_DOWNLOADED,
+                                                    trailingContent = {
+                                                        IconButton(
+                                                            onClick = { onOpenTrackMenu(item.track) },
+                                                            modifier = Modifier
+                                                                .minimumInteractiveComponentSize()
+                                                                .testTag("track_more_${item.track.videoId}"),
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Rounded.MoreVert,
+                                                                contentDescription = "Track options",
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            )
+                                                        }
+                                                    },
+                                                )
+                                            }
+
+                                            is SearchResultItem.AlbumResult -> {
+                                                CollectionResultRow(
+                                                    title = item.album.title,
+                                                    subtitle = buildString {
+                                                        append(item.album.artist)
+                                                        item.album.year?.let { append(" • $it") }
+                                                    },
+                                                    thumbnailUrl = item.album.thumbnailUrl,
+                                                    fallbackIcon = Icons.Rounded.Album,
+                                                    thumbnailCornerRadius = thumbnailCornerRadius,
+                                                    contentLayoutStyle = contentLayoutStyle,
+                                                    onClick = {
+                                                        onOpenPlaylistOrAlbum(
+                                                            item.album.browseId,
+                                                            item.album.title,
+                                                        )
+                                                    },
+                                                )
+                                            }
+
+                                            is SearchResultItem.PlaylistResult -> {
+                                                CollectionResultRow(
+                                                    title = item.playlist.title,
+                                                    subtitle = item.playlist.subtitle,
+                                                    thumbnailUrl = item.playlist.thumbnailUrl,
+                                                    fallbackIcon = Icons.AutoMirrored.Rounded.PlaylistPlay,
+                                                    thumbnailCornerRadius = thumbnailCornerRadius,
+                                                    contentLayoutStyle = contentLayoutStyle,
+                                                    onClick = {
+                                                        onOpenPlaylistOrAlbum(
+                                                            item.playlist.id,
+                                                            item.playlist.title,
+                                                        )
+                                                    },
+                                                )
+                                            }
+
+                                            is SearchResultItem.ArtistResult -> {
+                                                val rowMinHeight = when (contentLayoutStyle) {
+                                                    ContentLayoutStyle.COMPACT -> 48.dp
+                                                    ContentLayoutStyle.STANDARD -> 64.dp
+                                                    ContentLayoutStyle.SHOWCASE -> 76.dp
+                                                }
+                                                val avatarSize = when (contentLayoutStyle) {
+                                                    ContentLayoutStyle.COMPACT -> 40.dp
+                                                    ContentLayoutStyle.STANDARD -> 52.dp
+                                                    ContentLayoutStyle.SHOWCASE -> 60.dp
+                                                }
+                                                val vertPad = when (contentLayoutStyle) {
+                                                    ContentLayoutStyle.COMPACT -> 4.dp
+                                                    ContentLayoutStyle.STANDARD -> 8.dp
+                                                    ContentLayoutStyle.SHOWCASE -> 10.dp
+                                                }
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .heightIn(min = rowMinHeight)
+                                                        .clip(MaterialTheme.shapes.medium)
+                                                        .clickable { onOpenArtist(item.artist.id, item.artist.name) }
+                                                        .padding(horizontal = 12.dp, vertical = vertPad)
+                                                        .testTag("artist_row_${item.artist.id}"),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    Box(
                                                         modifier = Modifier
-                                                            .minimumInteractiveComponentSize()
-                                                            .testTag("track_more_${item.track.videoId}"),
+                                                            .size(avatarSize)
+                                                            .clip(CircleShape)
+                                                            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                                                        contentAlignment = Alignment.Center,
                                                     ) {
                                                         Icon(
-                                                            imageVector = Icons.Rounded.MoreVert,
-                                                            contentDescription = "Track options",
+                                                            imageVector = Icons.Rounded.Person,
+                                                            contentDescription = null,
                                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.size(if (contentLayoutStyle == ContentLayoutStyle.COMPACT) 20.dp else 24.dp),
+                                                        )
+                                                        if (!item.artist.thumbnailUrl.isNullOrBlank()) {
+                                                            AsyncImage(
+                                                                model = item.artist.thumbnailUrl,
+                                                                contentDescription = "${item.artist.name} photo",
+                                                                contentScale = ContentScale.Crop,
+                                                                modifier = Modifier.matchParentSize(),
+                                                            )
+                                                        }
+                                                    }
+                                                    Spacer(modifier = Modifier.width(14.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = item.artist.name,
+                                                            style = if (contentLayoutStyle == ContentLayoutStyle.SHOWCASE) {
+                                                                MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                                            } else if (contentLayoutStyle == ContentLayoutStyle.COMPACT) {
+                                                                MaterialTheme.typography.titleSmall
+                                                            } else {
+                                                                MaterialTheme.typography.titleMedium
+                                                            },
+                                                            color = MaterialTheme.colorScheme.onSurface,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                        )
+                                                        Text(
+                                                            text = item.artist.subtitle ?: "Artist",
+                                                            style = if (contentLayoutStyle == ContentLayoutStyle.COMPACT) {
+                                                                MaterialTheme.typography.bodySmall
+                                                            } else {
+                                                                MaterialTheme.typography.bodyMedium
+                                                            },
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
                                                         )
                                                     }
-                                                },
-                                            )
-                                        }
-
-                                        is SearchResultItem.AlbumResult -> {
-                                            CollectionResultRow(
-                                                title = item.album.title,
-                                                subtitle = buildString {
-                                                    append(item.album.artist)
-                                                    item.album.year?.let { append(" • $it") }
-                                                },
-                                                thumbnailUrl = item.album.thumbnailUrl,
-                                                fallbackIcon = Icons.Rounded.Album,
-                                                thumbnailCornerRadius = thumbnailCornerRadius,
-                                                contentLayoutStyle = contentLayoutStyle,
-                                                onClick = {
-                                                    onOpenPlaylistOrAlbum(
-                                                        item.album.browseId,
-                                                        item.album.title,
-                                                    )
-                                                },
-                                            )
-                                        }
-
-                                        is SearchResultItem.PlaylistResult -> {
-                                            CollectionResultRow(
-                                                title = item.playlist.title,
-                                                subtitle = item.playlist.subtitle,
-                                                thumbnailUrl = item.playlist.thumbnailUrl,
-                                                fallbackIcon = Icons.AutoMirrored.Rounded.PlaylistPlay,
-                                                thumbnailCornerRadius = thumbnailCornerRadius,
-                                                contentLayoutStyle = contentLayoutStyle,
-                                                onClick = {
-                                                    onOpenPlaylistOrAlbum(
-                                                        item.playlist.id,
-                                                        item.playlist.title,
-                                                    )
-                                                },
-                                            )
-                                        }
-
-                                        is SearchResultItem.ArtistResult -> {
-                                            val rowMinHeight = when (contentLayoutStyle) {
-                                                ContentLayoutStyle.COMPACT -> 48.dp
-                                                ContentLayoutStyle.STANDARD -> 64.dp
-                                                ContentLayoutStyle.SHOWCASE -> 76.dp
-                                            }
-                                            val avatarSize = when (contentLayoutStyle) {
-                                                ContentLayoutStyle.COMPACT -> 40.dp
-                                                ContentLayoutStyle.STANDARD -> 52.dp
-                                                ContentLayoutStyle.SHOWCASE -> 60.dp
-                                            }
-                                            val vertPad = when (contentLayoutStyle) {
-                                                ContentLayoutStyle.COMPACT -> 4.dp
-                                                ContentLayoutStyle.STANDARD -> 8.dp
-                                                ContentLayoutStyle.SHOWCASE -> 10.dp
-                                            }
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .heightIn(min = rowMinHeight)
-                                                    .clip(MaterialTheme.shapes.medium)
-                                                    .clickable { onOpenArtist(item.artist.id, item.artist.name) }
-                                                    .padding(horizontal = 12.dp, vertical = vertPad)
-                                                    .testTag("artist_row_${item.artist.id}"),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                            ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(avatarSize)
-                                                        .clip(CircleShape)
-                                                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-                                                    contentAlignment = Alignment.Center,
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Person,
-                                                        contentDescription = null,
-                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        modifier = Modifier.size(if (contentLayoutStyle == ContentLayoutStyle.COMPACT) 20.dp else 24.dp),
-                                                    )
-                                                    if (!item.artist.thumbnailUrl.isNullOrBlank()) {
-                                                        AsyncImage(
-                                                            model = item.artist.thumbnailUrl,
-                                                            contentDescription = "${item.artist.name} photo",
-                                                            contentScale = ContentScale.Crop,
-                                                            modifier = Modifier.matchParentSize(),
-                                                        )
-                                                    }
-                                                }
-                                                Spacer(modifier = Modifier.width(14.dp))
-                                                Column(modifier = Modifier.weight(1f)) {
-                                                    Text(
-                                                        text = item.artist.name,
-                                                        style = if (contentLayoutStyle == ContentLayoutStyle.SHOWCASE) {
-                                                            MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                                                        } else if (contentLayoutStyle == ContentLayoutStyle.COMPACT) {
-                                                            MaterialTheme.typography.titleSmall
-                                                        } else {
-                                                            MaterialTheme.typography.titleMedium
-                                                        },
-                                                        color = MaterialTheme.colorScheme.onSurface,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                    )
-                                                    Text(
-                                                        text = item.artist.subtitle ?: "Artist",
-                                                        style = if (contentLayoutStyle == ContentLayoutStyle.COMPACT) {
-                                                            MaterialTheme.typography.bodySmall
-                                                        } else {
-                                                            MaterialTheme.typography.bodyMedium
-                                                        },
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                    )
                                                 }
                                             }
                                         }
                                     }
-                                }
-                                if (uiState.isLoadingMore) {
-                                    item(key = "search_loading_more_footer") {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 16.dp)
-                                                .testTag("search_loading_more_footer"),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(28.dp),
-                                                strokeWidth = 2.5.dp,
-                                            )
+                                    if (uiState.isLoadingMore) {
+                                        item(key = "search_loading_more_footer") {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 16.dp)
+                                                    .testTag("search_loading_more_footer"),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(28.dp),
+                                                    strokeWidth = 2.5.dp,
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -666,7 +790,6 @@ fun SearchScreen(
                 }
             }
         }
-    }
 
         if (searchBarStyle == SearchBarStyle.FLOATING_BOTTOM) {
             Surface(
@@ -747,8 +870,10 @@ private fun HomeFeedContent(
     currentTrackId: String?,
     thumbnailCornerRadius: Int = 16,
     contentLayoutStyle: ContentLayoutStyle = ContentLayoutStyle.STANDARD,
+    downloadStates: Map<String, DownloadStatus> = emptyMap(),
     onRefreshHome: () -> Unit,
     onPlayTrack: (Track, List<Track>) -> Unit,
+    onOpenTrackMenu: (Track) -> Unit,
     onOpenPlaylistOrAlbum: (id: String, title: String) -> Unit,
 ) {
     when (homeState) {
@@ -855,77 +980,488 @@ private fun HomeFeedContent(
                                     shelf = shelf,
                                     currentTrackId = currentTrackId,
                                     thumbnailCornerRadius = thumbnailCornerRadius,
+                                    contentLayoutStyle = contentLayoutStyle,
+                                    downloadStates = downloadStates,
                                     onPlayTrack = onPlayTrack,
+                                    onOpenTrackMenu = onOpenTrackMenu,
                                     onOpenPlaylistOrAlbum = onOpenPlaylistOrAlbum,
                                 )
                             }
                         }
                     }
 
-                    ContentLayoutStyle.COMPACT,
-                    ContentLayoutStyle.SHOWCASE -> {
-                        val columns = if (contentLayoutStyle == ContentLayoutStyle.COMPACT) 3 else 2
-                        val horizontalGap = if (contentLayoutStyle == ContentLayoutStyle.COMPACT) 8.dp else 12.dp
-                        val rowSpacing = if (contentLayoutStyle == ContentLayoutStyle.COMPACT) 10.dp else 14.dp
-
+                    ContentLayoutStyle.COMPACT -> {
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .testTag("home_carousels_list"),
                             contentPadding = PaddingValues(top = 6.dp, bottom = 24.dp),
-                            verticalArrangement = Arrangement.spacedBy(rowSpacing),
+                            verticalArrangement = Arrangement.spacedBy(22.dp),
                         ) {
-                            homeState.shelves.forEach { shelf ->
+                            homeState.shelves.forEachIndexed { shelfIndex, shelf ->
                                 val shelfTracks = shelf.items
                                     .filterIsInstance<HomeCardItem.TrackCard>()
                                     .map { it.track }
-                                val chunkedRows = shelf.items.chunked(columns)
 
-                                item(key = "shelf_header_${shelf.id}") {
-                                    HomeShelfHeader(
-                                        shelf = shelf,
-                                        compact = contentLayoutStyle == ContentLayoutStyle.COMPACT,
-                                    )
-                                }
-
-                                itemsIndexed(
-                                    items = chunkedRows,
-                                    key = { rowIndex, _ -> "shelf_${shelf.id}_row_$rowIndex" },
-                                ) { _, rowItems ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(horizontalGap),
-                                    ) {
-                                        rowItems.forEach { item ->
-                                            val isCurrent = (item as? HomeCardItem.TrackCard)?.track?.videoId == currentTrackId
-                                            HomeGridCard(
-                                                item = item,
-                                                isCurrentTrack = isCurrent,
-                                                thumbnailCornerRadius = thumbnailCornerRadius,
-                                                showcase = contentLayoutStyle == ContentLayoutStyle.SHOWCASE,
-                                                onClick = {
-                                                    when (item) {
-                                                        is HomeCardItem.TrackCard -> {
-                                                            val queue = shelfTracks.ifEmpty { listOf(item.track) }
-                                                            onPlayTrack(item.track, queue)
-                                                        }
-                                                        is HomeCardItem.CollectionCard -> {
-                                                            onOpenPlaylistOrAlbum(item.id, item.title)
-                                                        }
-                                                    }
-                                                },
-                                                modifier = Modifier.weight(1f),
-                                            )
-                                        }
-                                        val remainder = columns - rowItems.size
-                                        repeat(remainder) {
-                                            Spacer(modifier = Modifier.weight(1f))
-                                        }
+                                if (shelfIndex == 0) {
+                                    item(key = "speed_dial_${shelf.id}") {
+                                        SpeedDialGridSection(
+                                            title = "Speed dial",
+                                            items = shelf.items,
+                                            currentTrackId = currentTrackId,
+                                            thumbnailCornerRadius = thumbnailCornerRadius,
+                                            onPlayTrack = { track ->
+                                                val queue = shelfTracks.ifEmpty { listOf(track) }
+                                                onPlayTrack(track, queue)
+                                            },
+                                            onOpenPlaylistOrAlbum = onOpenPlaylistOrAlbum,
+                                            onShuffleAll = {
+                                                if (shelfTracks.isNotEmpty()) {
+                                                    val shuffled = shelfTracks.shuffled()
+                                                    onPlayTrack(shuffled.first(), shuffled)
+                                                }
+                                            },
+                                        )
+                                    }
+                                } else if (shelfTracks.size >= 4) {
+                                    item(key = "paged_tracks_${shelf.id}") {
+                                        HorizontalStackedTracksSection(
+                                            shelf = shelf,
+                                            tracks = shelfTracks,
+                                            currentTrackId = currentTrackId,
+                                            thumbnailCornerRadius = thumbnailCornerRadius,
+                                            downloadStates = downloadStates,
+                                            onPlayTrack = onPlayTrack,
+                                            onOpenTrackMenu = onOpenTrackMenu,
+                                        )
+                                    }
+                                } else {
+                                    item(key = "compact_carousel_${shelf.id}") {
+                                        HomeShelfSection(
+                                            shelf = shelf,
+                                            currentTrackId = currentTrackId,
+                                            thumbnailCornerRadius = thumbnailCornerRadius,
+                                            contentLayoutStyle = contentLayoutStyle,
+                                            downloadStates = downloadStates,
+                                            onPlayTrack = onPlayTrack,
+                                            onOpenTrackMenu = onOpenTrackMenu,
+                                            onOpenPlaylistOrAlbum = onOpenPlaylistOrAlbum,
+                                        )
                                     }
                                 }
                             }
                         }
                     }
+
+                    ContentLayoutStyle.SHOWCASE -> {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag("home_carousels_list"),
+                            contentPadding = PaddingValues(top = 6.dp, bottom = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(24.dp),
+                        ) {
+                            homeState.shelves.forEachIndexed { shelfIndex, shelf ->
+                                val shelfTracks = shelf.items
+                                    .filterIsInstance<HomeCardItem.TrackCard>()
+                                    .map { it.track }
+
+                                if (shelfIndex == 0) {
+                                    item(key = "hero_spotlight_${shelf.id}") {
+                                        HeroSpotlightRow(
+                                            items = shelf.items,
+                                            currentTrackId = currentTrackId,
+                                            thumbnailCornerRadius = (thumbnailCornerRadius + 8).coerceIn(16, 28),
+                                            onPlayTrack = { track ->
+                                                val queue = shelfTracks.ifEmpty { listOf(track) }
+                                                onPlayTrack(track, queue)
+                                            },
+                                            onOpenPlaylistOrAlbum = onOpenPlaylistOrAlbum,
+                                        )
+                                    }
+                                } else if (shelfIndex == 1) {
+                                    item(key = "circular_shelf_${shelf.id}") {
+                                        CircularSpotlightSection(
+                                            shelf = shelf,
+                                            currentTrackId = currentTrackId,
+                                            onPlayTrack = { track ->
+                                                val queue = shelfTracks.ifEmpty { listOf(track) }
+                                                onPlayTrack(track, queue)
+                                            },
+                                            onOpenPlaylistOrAlbum = onOpenPlaylistOrAlbum,
+                                        )
+                                    }
+                                } else {
+                                    item(key = "showcase_carousel_${shelf.id}") {
+                                        HomeShelfSection(
+                                            shelf = shelf,
+                                            currentTrackId = currentTrackId,
+                                            thumbnailCornerRadius = thumbnailCornerRadius,
+                                            contentLayoutStyle = contentLayoutStyle,
+                                            downloadStates = downloadStates,
+                                            onPlayTrack = onPlayTrack,
+                                            onOpenTrackMenu = onOpenTrackMenu,
+                                            onOpenPlaylistOrAlbum = onOpenPlaylistOrAlbum,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpeedDialGridSection(
+    title: String,
+    items: List<HomeCardItem>,
+    currentTrackId: String?,
+    thumbnailCornerRadius: Int,
+    onPlayTrack: (Track) -> Unit,
+    onOpenPlaylistOrAlbum: (String, String) -> Unit,
+    onShuffleAll: () -> Unit,
+) {
+    val gridItems = items.take(8)
+    val rows = gridItems.chunked(3)
+    val tileShape = RoundedCornerShape(thumbnailCornerRadius.coerceIn(8, 20).dp)
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(bottom = 12.dp),
+        )
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            rows.forEachIndexed { rowIndex, rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    rowItems.forEach { item ->
+                        val isCurrent = (item as? HomeCardItem.TrackCard)?.track?.videoId == currentTrackId
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(1f)
+                                .clip(tileShape)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .then(
+                                    if (isCurrent) {
+                                        Modifier.border(2.dp, MaterialTheme.colorScheme.primary, tileShape)
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .clickable {
+                                    when (item) {
+                                        is HomeCardItem.TrackCard -> onPlayTrack(item.track)
+                                        is HomeCardItem.CollectionCard -> onOpenPlaylistOrAlbum(item.id, item.title)
+                                    }
+                                },
+                        ) {
+                            if (!item.thumbnailUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = item.thumbnailUrl,
+                                    contentDescription = item.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                                            0.45f to androidx.compose.ui.graphics.Color.Transparent,
+                                            1.0f to androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.82f),
+                                        )
+                                    ),
+                            )
+                            Text(
+                                text = item.title,
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = androidx.compose.ui.graphics.Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+
+                    val remaining = 3 - rowItems.size
+                    repeat(remaining) { slotIdx ->
+                        val isLastSlot = (rowIndex == rows.lastIndex && slotIdx == remaining - 1)
+                        if (isLastSlot && gridItems.size >= 6) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .aspectRatio(1f)
+                                    .clip(tileShape)
+                                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                                    .clickable(onClick = onShuffleAll),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Column(
+                                    modifier = Modifier.size(44.dp),
+                                    verticalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        DiceDot()
+                                        DiceDot()
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.Center,
+                                    ) {
+                                        DiceDot()
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        DiceDot()
+                                        DiceDot()
+                                    }
+                                }
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiceDot() {
+    Box(
+        modifier = Modifier
+            .size(9.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.onSecondaryContainer),
+    )
+}
+
+@Composable
+private fun HorizontalStackedTracksSection(
+    shelf: HomeShelf,
+    tracks: List<Track>,
+    currentTrackId: String?,
+    thumbnailCornerRadius: Int,
+    downloadStates: Map<String, DownloadStatus>,
+    onPlayTrack: (Track, List<Track>) -> Unit,
+    onOpenTrackMenu: (Track) -> Unit,
+) {
+    val trackColumns = remember(tracks) { tracks.chunked(4) }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        HomeShelfHeader(shelf = shelf)
+        Spacer(modifier = Modifier.height(10.dp))
+
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(end = 16.dp),
+        ) {
+            itemsIndexed(trackColumns) { _, columnTracks ->
+                Column(
+                    modifier = Modifier.width(310.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    columnTracks.forEach { track ->
+                        TrackRow(
+                            track = track,
+                            isCurrentTrack = track.videoId == currentTrackId,
+                            onClick = { onPlayTrack(track, tracks) },
+                            thumbnailCornerRadius = thumbnailCornerRadius,
+                            contentLayoutStyle = ContentLayoutStyle.COMPACT,
+                            downloadStatus = downloadStates[track.videoId] ?: DownloadStatus.NOT_DOWNLOADED,
+                            trailingContent = {
+                                IconButton(
+                                    onClick = { onOpenTrackMenu(track) },
+                                    modifier = Modifier.minimumInteractiveComponentSize(),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.MoreVert,
+                                        contentDescription = "Track options",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeroSpotlightRow(
+    items: List<HomeCardItem>,
+    currentTrackId: String?,
+    thumbnailCornerRadius: Int,
+    onPlayTrack: (Track) -> Unit,
+    onOpenPlaylistOrAlbum: (String, String) -> Unit,
+) {
+    val cardShape = RoundedCornerShape(thumbnailCornerRadius.dp)
+    val pagerState = rememberPagerState(pageCount = { items.size })
+
+    HorizontalPager(
+        state = pagerState,
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        pageSpacing = 10.dp,
+        modifier = Modifier.fillMaxWidth(),
+    ) { page ->
+        val item = items[page]
+        val offset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+        val absoluteOffset = offset.absoluteValue
+
+        // Dynamically scale width smoothly from 256.dp (active/centered) down to 80.dp (side peek)
+        val cardWidth = androidx.compose.ui.unit.lerp(256.dp, 80.dp, absoluteOffset.coerceIn(0f, 1f))
+        val isCurrent = (item as? HomeCardItem.TrackCard)?.track?.videoId == currentTrackId
+
+        Box(
+            modifier = Modifier
+                .width(cardWidth)
+                .height(256.dp)
+                .clip(cardShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .border(
+                    width = if (isCurrent) 2.dp else 1.dp,
+                    color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                    shape = cardShape,
+                )
+                .clickable {
+                    when (item) {
+                        is HomeCardItem.TrackCard -> onPlayTrack(item.track)
+                        is HomeCardItem.CollectionCard -> onOpenPlaylistOrAlbum(item.id, item.title)
+                    }
+                },
+        ) {
+            if (!item.thumbnailUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = item.thumbnailUrl,
+                    contentDescription = item.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            0.4f to androidx.compose.ui.graphics.Color.Transparent,
+                            1.0f to androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.85f),
+                        )
+                    ),
+            )
+
+            // Fade title out slightly if it's compressed on the side
+            val contentAlpha = (1f - (absoluteOffset * 0.7f)).coerceIn(0.2f, 1f)
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(16.dp),
+            ) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = contentAlpha),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = item.subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = contentAlpha * 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CircularSpotlightSection(
+    shelf: HomeShelf,
+    currentTrackId: String?,
+    onPlayTrack: (Track) -> Unit,
+    onOpenPlaylistOrAlbum: (String, String) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        HomeShelfHeader(shelf = shelf)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(end = 12.dp),
+        ) {
+            items(shelf.items, key = { "circle_${it.key}" }) { item ->
+                val isCurrent = (item as? HomeCardItem.TrackCard)?.track?.videoId == currentTrackId
+                Column(
+                    modifier = Modifier
+                        .width(124.dp)
+                        .clickable {
+                            when (item) {
+                                is HomeCardItem.TrackCard -> onPlayTrack(item.track)
+                                is HomeCardItem.CollectionCard -> onOpenPlaylistOrAlbum(item.id, item.title)
+                            }
+                        },
+                    horizontalAlignment = Alignment.Start,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(124.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .border(
+                                width = if (isCurrent) 2.dp else 1.dp,
+                                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                shape = CircleShape,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (!item.thumbnailUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = item.thumbnailUrl,
+                                contentDescription = item.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.matchParentSize(),
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = item.subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }
@@ -963,204 +1499,79 @@ private fun HomeShelfSection(
     shelf: HomeShelf,
     currentTrackId: String?,
     thumbnailCornerRadius: Int = 16,
+    contentLayoutStyle: ContentLayoutStyle = ContentLayoutStyle.STANDARD,
+    downloadStates: Map<String, DownloadStatus> = emptyMap(),
     onPlayTrack: (Track, List<Track>) -> Unit,
+    onOpenTrackMenu: (Track) -> Unit,
     onOpenPlaylistOrAlbum: (id: String, title: String) -> Unit,
 ) {
     val shelfTracks = remember(shelf.items) {
         shelf.items.filterIsInstance<HomeCardItem.TrackCard>().map { it.track }
     }
 
+    val isVerticalListShelf = shelf.title.contains("quick picks", ignoreCase = true) ||
+            shelf.title.contains("keep listening", ignoreCase = true) ||
+            shelf.title.contains("listen again", ignoreCase = true)
+
     Column(modifier = Modifier.fillMaxWidth()) {
         HomeShelfHeader(shelf = shelf)
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(end = 4.dp),
-        ) {
-            items(shelf.items, key = { it.key }) { item ->
-                HomeCarouselCard(
-                    item = item,
-                    isCurrentTrack = (item as? HomeCardItem.TrackCard)?.track?.videoId == currentTrackId,
-                    thumbnailCornerRadius = thumbnailCornerRadius,
-                    onClick = {
-                        when (item) {
-                            is HomeCardItem.TrackCard -> {
-                                val queue = shelfTracks.ifEmpty { listOf(item.track) }
-                                onPlayTrack(item.track, queue)
-                            }
-                            is HomeCardItem.CollectionCard -> {
-                                onOpenPlaylistOrAlbum(item.id, item.title)
-                            }
-                        }
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun HomeGridCard(
-    item: HomeCardItem,
-    isCurrentTrack: Boolean,
-    thumbnailCornerRadius: Int,
-    showcase: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val cardShape = RoundedCornerShape(thumbnailCornerRadius.dp)
-    val fallbackIcon = when (item) {
-        is HomeCardItem.TrackCard -> Icons.Rounded.MusicNote
-        is HomeCardItem.CollectionCard ->
-            if (item.isAlbum) Icons.Rounded.Album else Icons.AutoMirrored.Rounded.PlaylistPlay
-    }
-
-    val content: @Composable () -> Unit = {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(if (showcase) Modifier.padding(8.dp) else Modifier.padding(bottom = 2.dp)),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(cardShape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    .border(
-                        width = if (isCurrentTrack) 2.dp else 1.dp,
-                        color = if (isCurrentTrack) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.outlineVariant
-                        },
-                        shape = cardShape,
-                    ),
-                contentAlignment = Alignment.Center,
+        if (isVerticalListShelf && shelfTracks.isNotEmpty() && contentLayoutStyle == ContentLayoutStyle.STANDARD) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Icon(
-                    imageVector = fallbackIcon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(if (showcase) 40.dp else 28.dp),
-                )
-                if (!item.thumbnailUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = item.thumbnailUrl,
-                        contentDescription = "${item.title} artwork",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.matchParentSize(),
+                shelf.items.filterIsInstance<HomeCardItem.TrackCard>().forEach { cardItem ->
+                    TrackRow(
+                        track = cardItem.track,
+                        isCurrentTrack = cardItem.track.videoId == currentTrackId,
+                        onClick = { onPlayTrack(cardItem.track, shelfTracks) },
+                        thumbnailCornerRadius = thumbnailCornerRadius,
+                        contentLayoutStyle = contentLayoutStyle,
+                        downloadStatus = downloadStates[cardItem.track.videoId] ?: DownloadStatus.NOT_DOWNLOADED,
+                        trailingContent = {
+                            IconButton(
+                                onClick = { onOpenTrackMenu(cardItem.track) },
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .testTag("track_more_${cardItem.track.videoId}"),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.MoreVert,
+                                    contentDescription = "Track options",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
                     )
                 }
-
-                when (item) {
-                    is HomeCardItem.TrackCard -> {
-                        Surface(
-                            shape = CircleShape,
-                            color = if (isCurrentTrack) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.surface.copy(alpha = 0.84f)
-                            },
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(if (showcase) 8.dp else 6.dp)
-                                .size(if (showcase) 32.dp else 24.dp),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = if (isCurrentTrack) {
-                                        Icons.Rounded.GraphicEq
-                                    } else {
-                                        Icons.Rounded.PlayArrow
-                                    },
-                                    contentDescription = if (isCurrentTrack) "Now playing" else "Play track",
-                                    tint = if (isCurrentTrack) {
-                                        MaterialTheme.colorScheme.onPrimary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    },
-                                    modifier = Modifier.size(if (showcase) 18.dp else 14.dp),
-                                )
+            }
+        } else {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(end = 4.dp),
+            ) {
+                items(shelf.items, key = { it.key }) { item ->
+                    HomeCarouselCard(
+                        item = item,
+                        isCurrentTrack = (item as? HomeCardItem.TrackCard)?.track?.videoId == currentTrackId,
+                        thumbnailCornerRadius = thumbnailCornerRadius,
+                        onClick = {
+                            when (item) {
+                                is HomeCardItem.TrackCard -> {
+                                    val queue = shelfTracks.ifEmpty { listOf(item.track) }
+                                    onPlayTrack(item.track, queue)
+                                }
+                                is HomeCardItem.CollectionCard -> {
+                                    onOpenPlaylistOrAlbum(item.id, item.title)
+                                }
                             }
-                        }
-                    }
-
-                    is HomeCardItem.CollectionCard -> {
-                        if (showcase) {
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
-                                modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(8.dp),
-                            ) {
-                                Text(
-                                    text = if (item.isAlbum) "Album" else "Playlist",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                )
-                            }
-                        }
-                    }
+                        },
+                    )
                 }
             }
-
-            Spacer(modifier = Modifier.height(if (showcase) 8.dp else 5.dp))
-
-            Text(
-                text = item.title,
-                style = if (showcase) {
-                    MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
-                } else {
-                    MaterialTheme.typography.labelLarge
-                },
-                color = if (isCurrentTrack) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = item.subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-
-    if (showcase) {
-        val containerShape = RoundedCornerShape((thumbnailCornerRadius + 4).coerceIn(12, 24).dp)
-        Surface(
-            modifier = modifier
-                .clip(containerShape)
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    shape = containerShape,
-                )
-                .clickable(onClick = onClick)
-                .testTag("home_card_${item.key}"),
-            shape = containerShape,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-        ) {
-            content()
-        }
-    } else {
-        Box(
-            modifier = modifier
-                .clip(cardShape)
-                .clickable(onClick = onClick)
-                .testTag("home_card_${item.key}"),
-        ) {
-            content()
         }
     }
 }
