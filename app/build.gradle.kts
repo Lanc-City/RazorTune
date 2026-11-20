@@ -17,8 +17,8 @@ android {
     applicationId = "com.razortune.music"
     minSdk = 24
     targetSdk = 36
-    versionCode = 20
-    versionName = "1.0.0"
+    versionCode = 12
+    versionName = "1.12.5"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
