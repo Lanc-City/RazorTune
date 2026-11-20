@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -46,6 +47,8 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +61,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -252,6 +256,15 @@ fun RazorTuneApp(
     val artworkColors by themeViewModel.artworkColors.collectAsStateWithLifecycle()
     val performanceSettings by performanceViewModel.settings.collectAsStateWithLifecycle()
     val audioEffectsSettings by audioEffectsViewModel.settings.collectAsStateWithLifecycle()
+
+    // In-App Update Checker state
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+
+    LaunchedEffect(Unit) {
+        val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        val currentVersion = pInfo.versionName ?: "1.0.0"
+        updateInfo = GitHubUpdateChecker.checkForUpdate(currentVersion)
+    }
 
     LaunchedEffect(themeSettings.customDnsEnabled) {
         RazorTuneApplication.instance.innerTubeRepository.setCustomDnsEnabled(themeSettings.customDnsEnabled)
@@ -873,6 +886,28 @@ fun RazorTuneApp(
                 }
             }
         }
+    }
+
+    // In-App Update Dialog UI
+    updateInfo?.let { info ->
+        AlertDialog(
+            onDismissRequest = { updateInfo = null },
+            title = { Text("Update Available (${info.version})") },
+            text = { Text(info.releaseNotes) },
+            confirmButton = {
+                Button(onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(info.downloadUrl))
+                    context.startActivity(intent)
+                }) {
+                    Text("Download Update")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { updateInfo = null }) {
+                    Text("Later")
+                }
+            }
+        )
     }
 
     val currentTrack = playbackState.currentTrack
