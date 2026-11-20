@@ -3,7 +3,7 @@ name: Build & Release APK
 on:
   push:
     tags:
-      - 'v*' # Triggers automatically whenever you push a tag like v1.0.1
+      - 'v*'
 
 permissions:
   contents: write
@@ -14,28 +14,22 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Install Gradle
+        run: sudo apt-get update && sudo apt-get install -y gradle
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      # Builds a release APK.
-      # Note: Make sure signingConfig is set up in app/build.gradle.kts,
-      # or change assembleRelease to assembleDebug if you haven't configured a keystore yet.
-      - name: Build Release APK
-        run: ./gradlew assembleRelease
+      - name: Build Debug APK
+        run: gradle assembleDebug
 
       - name: Create GitHub Release & Upload APK
         uses: softprops/action-gh-release@v3
         with:
-          files: app/build/outputs/apk/release/*.apk
+          files: app/build/outputs/apk/debug/*.apk
           generate_release_notes: true
