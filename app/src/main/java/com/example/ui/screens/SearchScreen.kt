@@ -467,9 +467,9 @@ fun SearchScreen(
                             items(moodChips, key = { it.title }) { chip ->
                                 val selected = selectedMood?.title == chip.title
                                 val chipContainerColor = if (selected) {
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
                                 } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                    Color(0xFF141720)
                                 }
 
                                 Box(
@@ -478,7 +478,7 @@ fun SearchScreen(
                                         .clip(RoundedCornerShape(50.dp))
                                         .liquidGlass(
                                             cornerRadius = 50.dp,
-                                            glassIntensity = if (selected) 0.8f else 0.5f,
+                                            glassIntensity = if (selected) 0.85f else 0.7f,
                                             containerColor = chipContainerColor
                                         )
                                         .clickable { onSelectMoodChip(chip) }
@@ -489,7 +489,7 @@ fun SearchScreen(
                                     Text(
                                         text = chip.title,
                                         style = MaterialTheme.typography.labelLarge,
-                                        color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.onSurface,
                                     )
                                 }
                             }

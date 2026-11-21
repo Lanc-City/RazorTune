@@ -1,8 +1,6 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Brush
@@ -13,46 +11,48 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 
+/**
+ * Applies a true iOS-style frosted glass background effect.
+ * The glass styling is drawn entirely behind the component,
+ * ensuring all text and icons remain 100% sharp and legible on top.
+ */
 fun Modifier.liquidGlass(
     cornerRadius: Dp = 28.dp,
-    glassIntensity: Float = 0.6f,
-    containerColor: Color = Color(0xFF0F1117), // Deeper, richer dark tint
-    shape: Shape = RoundedCornerShape(cornerRadius),
-): Modifier = this then Modifier.composed {
-    val t = glassIntensity.coerceIn(0f, 1f)
+    glassIntensity: Float = 0.8f,
+    containerColor: Color = Color(0xFF141720),
+    shape: Shape? = null,
+): Modifier = this.drawBehind {
+    val radius = cornerRadius.toPx()
 
-    this.drawBehind {
-        val radius = cornerRadius.toPx()
+    // 1. Deep translucent dark glass background fill
+    drawRoundRect(
+        color = containerColor.copy(alpha = lerp(0.70f, 0.88f, glassIntensity)),
+        cornerRadius = CornerRadius(radius)
+    )
 
-        // 1. Much more translucent base fill so the background subtly shows through
-        drawRoundRect(
-            color = containerColor.copy(alpha = lerp(0.55f, 0.30f, t)),
-            cornerRadius = CornerRadius(radius)
-        )
-
-        // 2. Stronger top specular light reflection to create the glass curve illusion
-        drawRoundRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = lerp(0.28f, 0.45f, t)),
-                    Color.White.copy(alpha = lerp(0.04f, 0.10f, t)),
-                    Color.Transparent
-                )
+    // 2. Glossy top specular highlight (gives the glass its curved depth)
+    drawRoundRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = lerp(0.30f, 0.50f, glassIntensity)),
+                Color.White.copy(alpha = 0.05f),
+                Color.Transparent
             ),
-            cornerRadius = CornerRadius(radius)
-        )
-    }.drawBehind {
-        val radius = cornerRadius.toPx()
-        // 3. Crisp, bright refractive edge border
-        drawRoundRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = lerp(0.25f, 0.55f, t)),
-                    Color.White.copy(alpha = lerp(0.03f, 0.12f, t))
-                )
-            ),
-            cornerRadius = CornerRadius(radius),
-            style = Stroke(width = 1.4.dp.toPx())
-        )
-    }
+            endY = size.height * 0.4f
+        ),
+        cornerRadius = CornerRadius(radius)
+    )
+}.drawBehind {
+    val radius = cornerRadius.toPx()
+    // 3. Crisp, bright refractive outer border edge
+    drawRoundRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = lerp(0.45f, 0.75f, glassIntensity)),
+                Color.White.copy(alpha = 0.10f)
+            )
+        ),
+        cornerRadius = CornerRadius(radius),
+        style = Stroke(width = 1.3.dp.toPx())
+    )
 }
