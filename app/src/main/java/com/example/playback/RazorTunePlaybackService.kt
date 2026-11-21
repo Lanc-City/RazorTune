@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.annotation.OptIn
+import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -51,6 +52,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
+@OptIn(UnstableApi::class)
 class RazorTunePlaybackService : MediaLibraryService() {
 
     private var mediaLibrarySession: MediaLibrarySession? = null
@@ -66,12 +68,14 @@ class RazorTunePlaybackService : MediaLibraryService() {
     private var homeTracksCache: List<Track> = emptyList()
 
     @Volatile
+    private var likedTracksCache: List<Track> = emptyList()
+
+    @Volatile
     private var downloadedTracksCache: List<Track> = emptyList()
 
     @Volatile
     private var currentAudioQuality: AudioQualityMode = AudioQualityMode.HIGH
 
-    @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
 
@@ -104,7 +108,7 @@ class RazorTunePlaybackService : MediaLibraryService() {
                 val localFile = downloadManager.getDownloadedFile(videoId)
                 if (localFile != null && localFile.exists() && localFile.length() > 0L) {
                     dataSpec.buildUpon()
-                        .setUri(Uri.fromFile(localFile))
+                        .setUri(localFile.toUri())
                         .build()
                 } else {
                     val quality = currentAudioQuality
@@ -126,7 +130,7 @@ class RazorTunePlaybackService : MediaLibraryService() {
                     }
 
                     dataSpec.buildUpon()
-                        .setUri(Uri.parse(stream.audioUrl))
+                        .setUri(stream.audioUrl.toUri())
                         .setHttpRequestHeaders(mergedHeaders)
                         .build()
                 }
@@ -199,7 +203,6 @@ class RazorTunePlaybackService : MediaLibraryService() {
         }
     }
 
-    @OptIn(UnstableApi::class)
     private fun buildLikeCommandButton(isLiked: Boolean): CommandButton {
         return CommandButton.Builder()
             .setDisplayName(if (isLiked) "Liked" else "Like")
@@ -248,7 +251,6 @@ class RazorTunePlaybackService : MediaLibraryService() {
         private val repository get() = app.repository
         private val downloadManager get() = app.downloadManager
 
-        @OptIn(UnstableApi::class)
         override fun onConnect(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -298,7 +300,6 @@ class RazorTunePlaybackService : MediaLibraryService() {
             }
         }
 
-        @OptIn(UnstableApi::class)
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
@@ -307,7 +308,7 @@ class RazorTunePlaybackService : MediaLibraryService() {
             val rootExtras = Bundle(params?.extras ?: Bundle.EMPTY).apply {
                 putInt(
                     MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE,
-                    MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM,
+                    MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM,
                 )
                 putInt(
                     MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE,
@@ -324,7 +325,6 @@ class RazorTunePlaybackService : MediaLibraryService() {
             return Futures.immediateFuture(LibraryResult.ofItem(buildRootMediaItem(), rootParams))
         }
 
-        @OptIn(UnstableApi::class)
         override fun onGetChildren(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
@@ -337,8 +337,9 @@ class RazorTunePlaybackService : MediaLibraryService() {
                 when {
                     parentId == ROOT_ID -> {
                         val tabs = listOf(
-                            buildHomeTabMediaItem(),
                             buildPlaylistsTabMediaItem(),
+                            buildHomeTabMediaItem(),
+                            buildLikedTabMediaItem(),
                             buildDownloadedTabMediaItem(),
                         )
                         LibraryResult.ofItemList(paginate(tabs, page, pageSize), params)
@@ -397,6 +398,23 @@ class RazorTunePlaybackService : MediaLibraryService() {
                         LibraryResult.ofItemList(paginate(items, page, pageSize), params)
                     }
 
+                    parentId == TAB_LIKED_ID -> {
+                        ensureAuthReady()
+                        if (!repository.isSignedIn()) {
+                            return@runCatching LibraryResult.ofItemList(
+                                paginate(listOf(buildSignInNoticeMediaItem()), page, pageSize),
+                                params,
+                            )
+                        }
+                        val tracks = getOrFetchPlaylistTracks(LIKED_PLAYLIST_ID)
+                        likedTracksCache = tracks
+                        tracks.forEach { track -> trackCache[track.videoId] = track }
+                        val items = tracks.map {
+                            it.toPlayableMediaItem(playlistId = LIKED_PLAYLIST_ID, sourceTag = TAB_LIKED_ID)
+                        }
+                        LibraryResult.ofItemList(paginate(items, page, pageSize), params)
+                    }
+
                     parentId.startsWith(PLAYLIST_PREFIX) -> {
                         ensureAuthReady()
                         val playlistId = parentId.removePrefix(PLAYLIST_PREFIX)
@@ -443,6 +461,7 @@ class RazorTunePlaybackService : MediaLibraryService() {
                 mediaId == ROOT_ID -> LibraryResult.ofItem(buildRootMediaItem(), null)
                 mediaId == TAB_HOME_ID -> LibraryResult.ofItem(buildHomeTabMediaItem(), null)
                 mediaId == TAB_PLAYLISTS_ID -> LibraryResult.ofItem(buildPlaylistsTabMediaItem(), null)
+                mediaId == TAB_LIKED_ID -> LibraryResult.ofItem(buildLikedTabMediaItem(), null)
                 mediaId == TAB_DOWNLOADED_ID -> LibraryResult.ofItem(buildDownloadedTabMediaItem(), null)
                 mediaId == INFO_SIGN_IN_ID -> LibraryResult.ofItem(buildSignInNoticeMediaItem(), null)
                 mediaId.startsWith(PLAYLIST_PREFIX) -> {
@@ -527,7 +546,8 @@ class RazorTunePlaybackService : MediaLibraryService() {
                 val items = tracks.map {
                     it.toPlayableMediaItem(searchQueryTag = trimmed)
                 }
-                LibraryResult.ofItemList(paginate(items, page, pageSize), params)
+                val effectivePageSize = maxOf(pageSize, 100)
+                LibraryResult.ofItemList(paginate(items, page, effectivePageSize), params)
             }.getOrElse { err ->
                 LibraryResult.ofError(
                     SessionError(
@@ -599,6 +619,16 @@ class RazorTunePlaybackService : MediaLibraryService() {
                     val tracks = getOrFetchHomeTracks()
                     if (tracks.isNotEmpty()) {
                         val items = tracks.map { it.toPlayableMediaItem(sourceTag = TAB_HOME_ID) }
+                        val idx = tracks.indexOfFirst { it.videoId == mediaId }.coerceAtLeast(0)
+                        syncQueueWithPlaybackController(tracks, idx)
+                        return@futureFromSuspend MediaSession.MediaItemsWithStartPosition(items, idx, safeStartPosition)
+                    }
+                }
+
+                if (sourceTag == TAB_LIKED_ID) {
+                    val tracks = likedTracksCache.ifEmpty { getOrFetchPlaylistTracks(LIKED_PLAYLIST_ID) }
+                    if (tracks.isNotEmpty()) {
+                        val items = tracks.map { it.toPlayableMediaItem(playlistId = LIKED_PLAYLIST_ID, sourceTag = TAB_LIKED_ID) }
                         val idx = tracks.indexOfFirst { it.videoId == mediaId }.coerceAtLeast(0)
                         syncQueueWithPlaybackController(tracks, idx)
                         return@futureFromSuspend MediaSession.MediaItemsWithStartPosition(items, idx, safeStartPosition)
@@ -699,7 +729,7 @@ class RazorTunePlaybackService : MediaLibraryService() {
                         } else {
                             val localFile = downloadManager.getDownloadedFile(id)
                             val targetUri = if (localFile != null && localFile.exists() && localFile.length() > 0L) {
-                                Uri.fromFile(localFile)
+                                localFile.toUri()
                             } else {
                                 item.localConfiguration?.uri ?: buildMediaUri(id)
                             }
@@ -793,6 +823,19 @@ class RazorTunePlaybackService : MediaLibraryService() {
                 )
                 .build()
 
+        private fun buildLikedTabMediaItem(): MediaItem =
+            MediaItem.Builder()
+                .setMediaId(TAB_LIKED_ID)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle("Liked")
+                        .setIsBrowsable(true)
+                        .setIsPlayable(false)
+                        .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                        .build(),
+                )
+                .build()
+
         private fun buildDownloadedTabMediaItem(): MediaItem =
             MediaItem.Builder()
                 .setMediaId(TAB_DOWNLOADED_ID)
@@ -827,7 +870,7 @@ class RazorTunePlaybackService : MediaLibraryService() {
                     MediaMetadata.Builder()
                         .setTitle(title)
                         .setSubtitle(songCountText ?: subtitle)
-                        .setArtworkUri(thumbnailUrl?.let { Uri.parse(it) })
+                        .setArtworkUri(thumbnailUrl?.toUri())
                         .setIsBrowsable(true)
                         .setIsPlayable(false)
                         .setMediaType(MediaMetadata.MEDIA_TYPE_PLAYLIST)
@@ -835,7 +878,6 @@ class RazorTunePlaybackService : MediaLibraryService() {
                 )
                 .build()
 
-        @OptIn(UnstableApi::class)
         private fun HomeCardItem.CollectionCard.toBrowsableMediaItem(groupTitle: String? = null): MediaItem {
             val extras = Bundle().apply {
                 groupTitle?.let { putString(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_GROUP_TITLE, it) }
@@ -846,7 +888,7 @@ class RazorTunePlaybackService : MediaLibraryService() {
                     MediaMetadata.Builder()
                         .setTitle(title)
                         .setSubtitle(subtitle)
-                        .setArtworkUri(thumbnailUrl?.let { Uri.parse(it) })
+                        .setArtworkUri(thumbnailUrl?.toUri())
                         .setIsBrowsable(true)
                         .setIsPlayable(false)
                         .setMediaType(
@@ -858,7 +900,6 @@ class RazorTunePlaybackService : MediaLibraryService() {
                 .build()
         }
 
-        @OptIn(UnstableApi::class)
         private fun Track.toPlayableMediaItem(
             playlistId: String? = null,
             sourceTag: String? = null,
@@ -873,7 +914,7 @@ class RazorTunePlaybackService : MediaLibraryService() {
             }
             val localFile = downloadManager.getDownloadedFile(videoId)
             val resolvedUri = if (localFile != null && localFile.exists() && localFile.length() > 0L) {
-                Uri.fromFile(localFile)
+                localFile.toUri()
             } else {
                 buildMediaUri(videoId)
             }
@@ -885,7 +926,7 @@ class RazorTunePlaybackService : MediaLibraryService() {
                         .setTitle(title)
                         .setArtist(artist)
                         .setAlbumTitle(album)
-                        .setArtworkUri(thumbnailUrl?.let { Uri.parse(it) })
+                        .setArtworkUri(thumbnailUrl?.toUri())
                         .setIsBrowsable(false)
                         .setIsPlayable(true)
                         .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
@@ -917,7 +958,9 @@ class RazorTunePlaybackService : MediaLibraryService() {
         private const val ROOT_ID = "root"
         private const val TAB_HOME_ID = "tab_home"
         private const val TAB_PLAYLISTS_ID = "tab_playlists"
+        private const val TAB_LIKED_ID = "tab_liked"
         private const val TAB_DOWNLOADED_ID = "tab_downloaded"
+        private const val LIKED_PLAYLIST_ID = "LM"
         private const val INFO_SIGN_IN_ID = "info_sign_in"
         private const val PLAYLIST_PREFIX = "playlist:"
         private const val EXTRA_PLAYLIST_ID = "playlist_id"
@@ -926,6 +969,6 @@ class RazorTunePlaybackService : MediaLibraryService() {
         const val ACTION_TOGGLE_LIKE = "com.example.razortune.ACTION_TOGGLE_LIKE"
 
         fun buildMediaUri(videoId: String): Uri =
-            Uri.parse("$SCHEME_RAZORTUNE://$videoId")
+            "$SCHEME_RAZORTUNE://$videoId".toUri()
     }
 }

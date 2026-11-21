@@ -50,7 +50,7 @@ fun AboutScreen(
     onOpenLicenses: () -> Unit = {},
     onOpenGitHub: () -> Unit = {},
     modifier: Modifier = Modifier,
-    appVersion: String = "1.0.0 (Release)",
+    appVersion: String = "1.12.7 (Release)",
 ) {
     Column(
         modifier = modifier

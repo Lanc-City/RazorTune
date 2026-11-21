@@ -42,7 +42,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -112,16 +111,22 @@ fun MiniPlayerBar(
                 else -> 14.dp
             }
 
-            val glassBorder = Brush.linearGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = lerp(0.08f, 0.54f, t)),
-                    Color.White.copy(alpha = lerp(0.02f, 0.16f, t)),
-                ),
-            )
             val containerColor = if (liquidGlass) {
                 MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = lerp(0.95f, 0.44f, t))
             } else {
                 MaterialTheme.colorScheme.surfaceContainerHigh
+            }
+
+            val liquidGlassModifier = if (liquidGlass) {
+                Modifier.liquidGlass(
+                    cornerRadius = cornerRadiusDp.dp,
+                    glassIntensity = glassIntensity,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                )
+            } else if (isDocked) {
+                Modifier.border(width = 1.dp, color = MaterialTheme.colorScheme.outlineVariant, shape = shape)
+            } else {
+                Modifier
             }
 
             val swipeModifier = if (swipeToSkip) {
@@ -147,31 +152,14 @@ fun MiniPlayerBar(
                     .fillMaxWidth()
                     .padding(horizontal = horizontalPadding, vertical = if (isDocked) 0.dp else 6.dp)
                     .clip(shape)
-                    .then(
-                        if (liquidGlass) {
-                            Modifier
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            Color.White.copy(alpha = lerp(0.0f, 0.14f, t)),
-                                            Color.Transparent,
-                                        ),
-                                    ),
-                                )
-                                .border(width = 1.dp, brush = glassBorder, shape = shape)
-                        } else if (isDocked) {
-                            Modifier.border(width = 1.dp, color = MaterialTheme.colorScheme.outlineVariant, shape = shape)
-                        } else {
-                            Modifier
-                        },
-                    )
+                    .then(liquidGlassModifier)
                     .then(swipeModifier)
                     .clickable(onClick = onExpand)
                     .testTag("mini_player_bar"),
-                color = containerColor,
+                color = if (liquidGlass) Color.Transparent else containerColor,
                 shape = shape,
-                tonalElevation = if (liquidGlass) 0.dp else 6.dp,
-                shadowElevation = if (liquidGlass) (6f + 10f * t).dp else 8.dp,
+                tonalElevation = 0.dp,
+                shadowElevation = if (liquidGlass) (6f + 12f * t).dp else 8.dp,
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(

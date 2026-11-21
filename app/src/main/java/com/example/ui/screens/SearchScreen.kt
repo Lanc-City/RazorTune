@@ -31,13 +31,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Login
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.Login
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Person
@@ -72,6 +72,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -97,6 +100,7 @@ import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.example.model.SearchBarStyle
+import com.example.ui.components.liquidGlass
 
 @Composable
 fun SearchScreen(
@@ -248,7 +252,7 @@ fun SearchScreen(
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
                                                 Icon(
-                                                    imageVector = Icons.Rounded.Login,
+                                                    imageVector = Icons.AutoMirrored.Rounded.Login,
                                                     contentDescription = null,
                                                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                                     modifier = Modifier.size(20.dp),
@@ -462,24 +466,32 @@ fun SearchScreen(
                         ) {
                             items(moodChips, key = { it.title }) { chip ->
                                 val selected = selectedMood?.title == chip.title
-                                FilterChip(
-                                    selected = selected,
-                                    onClick = { onSelectMoodChip(chip) },
-                                    label = {
-                                        Text(
-                                            text = chip.title,
-                                            style = MaterialTheme.typography.labelLarge,
-                                        )
-                                    },
-                                    shape = RoundedCornerShape(50.dp),
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    ),
+                                val chipContainerColor = if (selected) {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                }
+
+                                Box(
                                     modifier = Modifier
                                         .heightIn(min = 38.dp)
+                                        .clip(RoundedCornerShape(50.dp))
+                                        .liquidGlass(
+                                            cornerRadius = 50.dp,
+                                            glassIntensity = if (selected) 0.8f else 0.5f,
+                                            containerColor = chipContainerColor
+                                        )
+                                        .clickable { onSelectMoodChip(chip) }
+                                        .padding(horizontal = 16.dp, vertical = 8.dp)
                                         .testTag("mood_chip_${chip.title.lowercase().replace(" ", "_")}"),
-                                )
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = chip.title,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
                             }
                         }
                         if (isLoadingMood) {
@@ -791,17 +803,20 @@ fun SearchScreen(
             }
         }
 
+        // Floating Bottom Search / Navigation Bar (Integrated with liquidGlass support)
         if (searchBarStyle == SearchBarStyle.FLOATING_BOTTOM) {
             Surface(
                 shape = RoundedCornerShape(50.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = 6.dp,
+                color = Color.Transparent,
+                tonalElevation = 0.dp,
                 shadowElevation = 8.dp,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 10.dp)
-                    .widthIn(max = 720.dp),
+                    .widthIn(max = 720.dp)
+                    .clip(RoundedCornerShape(50.dp))
+                    .liquidGlass(cornerRadius = 50.dp, glassIntensity = 0.75f),
             ) {
                 OutlinedTextField(
                     value = query,
@@ -843,10 +858,12 @@ fun SearchScreen(
                     singleLine = true,
                     shape = RoundedCornerShape(50.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        errorContainerColor = Color.Transparent,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
                     ),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(
@@ -1176,16 +1193,16 @@ private fun SpeedDialGridSection(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .background(
-                                        androidx.compose.ui.graphics.Brush.verticalGradient(
-                                            0.45f to androidx.compose.ui.graphics.Color.Transparent,
-                                            1.0f to androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.82f),
+                                        Brush.verticalGradient(
+                                            0.45f to Color.Transparent,
+                                            1.0f to Color.Black.copy(alpha = 0.82f),
                                         )
                                     ),
                             )
                             Text(
                                 text = item.title,
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = androidx.compose.ui.graphics.Color.White,
+                                color = Color.White,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier
@@ -1328,7 +1345,6 @@ private fun HeroSpotlightRow(
         val offset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
         val absoluteOffset = offset.absoluteValue
 
-        // Dynamically scale width smoothly from 256.dp (active/centered) down to 80.dp (side peek)
         val cardWidth = androidx.compose.ui.unit.lerp(256.dp, 80.dp, absoluteOffset.coerceIn(0f, 1f))
         val isCurrent = (item as? HomeCardItem.TrackCard)?.track?.videoId == currentTrackId
 
@@ -1363,14 +1379,13 @@ private fun HeroSpotlightRow(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
-                        androidx.compose.ui.graphics.Brush.verticalGradient(
-                            0.4f to androidx.compose.ui.graphics.Color.Transparent,
-                            1.0f to androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.85f),
+                        Brush.verticalGradient(
+                            0.4f to Color.Transparent,
+                            1.0f to Color.Black.copy(alpha = 0.85f),
                         )
                     ),
             )
 
-            // Fade title out slightly if it's compressed on the side
             val contentAlpha = (1f - (absoluteOffset * 0.7f)).coerceIn(0.2f, 1f)
 
             Column(
@@ -1381,7 +1396,7 @@ private fun HeroSpotlightRow(
                 Text(
                     text = item.title,
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = contentAlpha),
+                    color = Color.White.copy(alpha = contentAlpha),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1389,7 +1404,7 @@ private fun HeroSpotlightRow(
                 Text(
                     text = item.subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = contentAlpha * 0.85f),
+                    color = Color.White.copy(alpha = contentAlpha * 0.85f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1709,7 +1724,7 @@ private fun CollectionResultRow(
     title: String,
     subtitle: String,
     thumbnailUrl: String?,
-    fallbackIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    fallbackIcon: ImageVector,
     thumbnailCornerRadius: Int = 16,
     contentLayoutStyle: ContentLayoutStyle = ContentLayoutStyle.STANDARD,
     onClick: () -> Unit,

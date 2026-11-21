@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
@@ -103,6 +104,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -128,6 +130,7 @@ import com.example.model.ThemeSettings
 import com.example.model.Track
 import com.example.model.VisualizerStyle
 import com.example.ui.viewmodel.LyricsUiState
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -236,7 +239,6 @@ fun NowPlayingSheet(
     val nowPlayingStyle = themeSettings.nowPlayingStyle
     val sliderStyle = themeSettings.playerSliderStyle
 
-    // Full-Bleed takes visual precedence over Modern Glass so header & bottom bars never duplicate
     val isFullBleedBackdrop = nowPlayingStyle == NowPlayingStyle.FULL_BLEED
     val isModernGlass = !isFullBleedBackdrop && playerDesign == PlayerDesignStyle.MODERN_GLASS
 
@@ -259,7 +261,7 @@ fun NowPlayingSheet(
                 .clip(sheetShape)
                 .background(if (isFullBleedBackdrop) Color.Black else baseSurface),
         ) {
-            // 1. Background Layer
+            // Background Layer
             if (isFullBleedBackdrop) {
                 SubcomposeAsyncImage(
                     model = track.thumbnailUrl,
@@ -379,7 +381,7 @@ fun NowPlayingSheet(
                 }
             }
 
-            // 2. Foreground Content Column
+            // Foreground Content Column
             val foregroundTextColor = if (isFullBleedBackdrop) Color.White else MaterialTheme.colorScheme.onSurface
             val foregroundSubtleColor = if (isFullBleedBackdrop) Color.White.copy(alpha = 0.78f) else MaterialTheme.colorScheme.onSurfaceVariant
 
@@ -542,7 +544,7 @@ fun NowPlayingSheet(
                         MaterialTheme.colorScheme.outlineVariant
                     }
 
-                    // Foreground Artwork Card
+                    // Artwork Container
                     if (nowPlayingStyle == NowPlayingStyle.VINYL) {
                         Box(
                             modifier = Modifier
@@ -705,7 +707,7 @@ fun NowPlayingSheet(
                         }
                     }
 
-                    // Track Metadata & Action Buttons
+                    // Metadata
                     if (isFullBleedBackdrop) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -931,7 +933,7 @@ fun NowPlayingSheet(
                                         start = Offset(0f, centerY),
                                         end = Offset(width, centerY),
                                         strokeWidth = 4.dp.toPx(),
-                                        cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                                        cap = StrokeCap.Round,
                                     )
 
                                     val path = androidx.compose.ui.graphics.Path().apply {
@@ -951,7 +953,7 @@ fun NowPlayingSheet(
                                         color = primaryColor,
                                         style = androidx.compose.ui.graphics.drawscope.Stroke(
                                             width = 5.dp.toPx(),
-                                            cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                                            cap = StrokeCap.Round,
                                         ),
                                     )
                                     drawCircle(
@@ -1091,15 +1093,20 @@ fun NowPlayingSheet(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Primary Transport Controls
+                    // Transport Controls with clean liquidGlass modifier support
                     if (isFullBleedBackdrop) {
-                        // Grouped translucent pill dock matching your screenshot
+                        val controlContainerModifier = if (liquidGlass) {
+                            Modifier.liquidGlass(cornerRadius = 32.dp, glassIntensity = glassT, containerColor = Color.Black)
+                        } else {
+                            Modifier.border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(32.dp))
+                        }
+
                         Surface(
                             shape = RoundedCornerShape(32.dp),
-                            color = Color.Black.copy(alpha = 0.42f),
+                            color = if (liquidGlass) Color.Transparent else Color.Black.copy(alpha = 0.42f),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(32.dp)),
+                                .then(controlContainerModifier),
                         ) {
                             Row(
                                 modifier = Modifier
@@ -1268,7 +1275,7 @@ fun NowPlayingSheet(
                                         disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
                                     ),
                                     modifier = Modifier
-                                        .size(if (playerDesign == PlayerDesignStyle.MINIMALIST) 62.dp else 56.dp)
+                                        .size(56.dp)
                                         .testTag("now_playing_prev"),
                                 ) {
                                     Icon(
@@ -1279,69 +1286,37 @@ fun NowPlayingSheet(
                                         } else {
                                             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f)
                                         },
-                                        modifier = Modifier.size(if (playerDesign == PlayerDesignStyle.MINIMALIST) 38.dp else 34.dp),
+                                        modifier = Modifier.size(34.dp),
                                     )
                                 }
 
-                                if (playerDesign == PlayerDesignStyle.MINIMALIST) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(76.dp)
-                                            .shadow(8.dp, CircleShape)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.primary)
-                                            .clickable(onClick = onTogglePlayPause)
-                                            .testTag("now_playing_play_pause"),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        if (playbackState.isBuffering && !playbackState.isPlaying) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(32.dp),
-                                                strokeWidth = 3.dp,
-                                                color = MaterialTheme.colorScheme.onPrimary,
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = if (playbackState.isPlaying) {
-                                                    Icons.Rounded.Pause
-                                                } else {
-                                                    Icons.Rounded.PlayArrow
-                                                },
-                                                contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
-                                                tint = MaterialTheme.colorScheme.onPrimary,
-                                                modifier = Modifier.size(40.dp),
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    FilledIconButton(
-                                        onClick = onTogglePlayPause,
-                                        shape = CircleShape,
-                                        colors = IconButtonDefaults.filledIconButtonColors(
-                                            containerColor = MaterialTheme.colorScheme.primary,
-                                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                                        ),
-                                        modifier = Modifier
-                                            .size(68.dp)
-                                            .testTag("now_playing_play_pause"),
-                                    ) {
-                                        if (playbackState.isBuffering && !playbackState.isPlaying) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(28.dp),
-                                                strokeWidth = 3.dp,
-                                                color = MaterialTheme.colorScheme.onPrimary,
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = if (playbackState.isPlaying) {
-                                                    Icons.Rounded.Pause
-                                                } else {
-                                                    Icons.Rounded.PlayArrow
-                                                },
-                                                contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
-                                                modifier = Modifier.size(36.dp),
-                                            )
-                                        }
+                                FilledIconButton(
+                                    onClick = onTogglePlayPause,
+                                    shape = CircleShape,
+                                    colors = IconButtonDefaults.filledIconButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                    ),
+                                    modifier = Modifier
+                                        .size(68.dp)
+                                        .testTag("now_playing_play_pause"),
+                                ) {
+                                    if (playbackState.isBuffering && !playbackState.isPlaying) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(28.dp),
+                                            strokeWidth = 3.dp,
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = if (playbackState.isPlaying) {
+                                                Icons.Rounded.Pause
+                                            } else {
+                                                Icons.Rounded.PlayArrow
+                                            },
+                                            contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
+                                            modifier = Modifier.size(36.dp),
+                                        )
                                     }
                                 }
 
@@ -1353,7 +1328,7 @@ fun NowPlayingSheet(
                                         disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
                                     ),
                                     modifier = Modifier
-                                        .size(if (playerDesign == PlayerDesignStyle.MINIMALIST) 62.dp else 56.dp)
+                                        .size(56.dp)
                                         .testTag("now_playing_next"),
                                 ) {
                                     Icon(
@@ -1364,23 +1339,28 @@ fun NowPlayingSheet(
                                         } else {
                                             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f)
                                         },
-                                        modifier = Modifier.size(if (playerDesign == PlayerDesignStyle.MINIMALIST) 38.dp else 34.dp),
+                                        modifier = Modifier.size(34.dp),
                                     )
                                 }
                             }
                         }
 
-                        if (playerDesign == PlayerDesignStyle.CAPSULE) {
+                        if (playerDesign == PlayerDesignStyle.CAPSULE || liquidGlass) {
                             val capsuleShape = RoundedCornerShape(50.dp)
+                            val capsuleGlassModifier = if (liquidGlass) {
+                                Modifier.liquidGlass(cornerRadius = 50.dp, glassIntensity = glassT)
+                            } else {
+                                Modifier.border(width = 1.dp, color = MaterialTheme.colorScheme.outlineVariant, shape = capsuleShape)
+                            }
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(capsuleShape)
-                                    .border(width = 1.dp, color = MaterialTheme.colorScheme.outlineVariant, shape = capsuleShape)
+                                    .then(capsuleGlassModifier)
                                     .testTag("now_playing_capsule_controls"),
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                color = if (liquidGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh,
                                 shape = capsuleShape,
-                                shadowElevation = 4.dp,
+                                shadowElevation = if (liquidGlass) 8.dp else 4.dp,
                             ) {
                                 transportControls()
                             }
@@ -1482,66 +1462,7 @@ fun NowPlayingSheet(
                                 }
                             }
                         }
-                    } else if (isModernGlass) {
-                        Surface(
-                            shape = RoundedCornerShape(22.dp),
-                            color = Color.White.copy(alpha = 0.12f),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(22.dp)),
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(50.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceEvenly,
-                            ) {
-                                IconButton(
-                                    onClick = onToggleLike,
-                                    modifier = Modifier.testTag("now_playing_like_button"),
-                                ) {
-                                    Icon(
-                                        imageVector = if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                        contentDescription = "Like",
-                                        tint = if (isLiked) primaryAccent else Color.White,
-                                    )
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .width(1.dp)
-                                        .height(22.dp)
-                                        .background(Color.White.copy(alpha = 0.18f)),
-                                )
-                                IconButton(
-                                    onClick = { showSleepTimerDialog = true },
-                                    modifier = Modifier.testTag("now_playing_sleep_timer_button"),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Bedtime,
-                                        contentDescription = sleepLabel,
-                                        tint = if (sleepTimerActive) primaryAccent else Color.White,
-                                    )
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .width(1.dp)
-                                        .height(22.dp)
-                                        .background(Color.White.copy(alpha = 0.18f)),
-                                )
-                                IconButton(
-                                    onClick = onOpenMoreMenu,
-                                    modifier = Modifier.testTag("now_playing_more_button"),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.MoreVert,
-                                        contentDescription = "More options",
-                                        tint = Color.White,
-                                    )
-                                }
-                            }
-                        }
-                    } else if (isConnectedLayout) {
+                    } else {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -1574,48 +1495,6 @@ fun NowPlayingSheet(
                                 active = false,
                                 testTag = "now_playing_more_button",
                                 onClick = onOpenMoreMenu,
-                            )
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            PlayerSecondaryButton(
-                                icon = if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                label = if (isLiked) "Liked" else "Like",
-                                active = isLiked,
-                                testTag = "now_playing_like_button",
-                                onClick = onToggleLike,
-                            )
-                            PlayerSecondaryButton(
-                                icon = Icons.Rounded.Lyrics,
-                                label = if (showLyrics) "Artwork" else "Lyrics",
-                                active = showLyrics,
-                                testTag = "now_playing_lyrics_button",
-                                onClick = onToggleLyrics,
-                            )
-                            PlayerSecondaryButton(
-                                icon = Icons.Rounded.Bedtime,
-                                label = sleepLabel,
-                                active = sleepTimerActive,
-                                testTag = "now_playing_sleep_timer_button",
-                                onClick = { showSleepTimerDialog = true },
-                            )
-                            PlayerSecondaryButton(
-                                icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                                label = queueLabel,
-                                active = showQueueSheet,
-                                testTag = "now_playing_queue_button",
-                                onClick = { showQueueSheet = true },
-                            )
-                            PlayerSecondaryButton(
-                                icon = Icons.Rounded.Share,
-                                label = "Share",
-                                active = false,
-                                testTag = "now_playing_share_button",
-                                onClick = onShare,
                             )
                         }
                     }
