@@ -3,129 +3,138 @@ package com.example.data
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import coil.Coil
+import android.util.Log
 import com.example.model.DownloadStatus
 import com.example.model.DownloadedTrack
 import com.example.model.Track
 import java.io.File
 import java.io.FileOutputStream
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.log10
-import kotlin.math.pow
+import java.io.IOException
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-class OfflineDownloadManager(
+class OfflineDownloadManager @JvmOverloads constructor(
     private val context: Context,
-    private val repository: InnerTubeRepository,
-    private val storageStore: StoragePreferencesStore,
+    private val repository: Any? = null,
+    @Suppress("unused") private val storageStore: Any? = null
 ) {
-    private val offlineDir = File(context.filesDir, "offline_audio").apply { mkdirs() }
-    private val legacyDir = File(context.filesDir, "downloads")
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val httpClient = OkHttpClient.Builder().followRedirects(true).build()
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
+    private val appContext = context.applicationContext
+    private val offlineDir = File(appContext.filesDir, "audio_downloads").apply { if (!exists()) mkdirs() }
+    private val metaDir = File(appContext.filesDir, "download_metadata").apply { if (!exists()) mkdirs() }
+    private val legacyDir = File(appContext.filesDir, "downloads")
+    private val tempDir = File(appContext.filesDir, "temp_cache").apply { if (!exists()) mkdirs() }
+
     private val downloadSemaphore = Semaphore(2)
+    private val fileMutex = Mutex()
+    private val json = Json { ignoreUnknownKeys = true }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val _downloadStates = MutableStateFlow<Map<String, DownloadStatus>>(emptyMap())
-    val downloadStates: StateFlow<Map<String, DownloadStatus>> = _downloadStates.asStateFlow()
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .connectionPool(ConnectionPool(10, 60, TimeUnit.SECONDS))
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
 
-    private val _downloadProgress = MutableStateFlow<Map<String, Float>>(emptyMap())
-    val downloadProgress: StateFlow<Map<String, Float>> = _downloadProgress.asStateFlow()
+    // Using read-only getters to bypass interface type argument conflicts entirely
+    private val _downloadStates = MutableStateFlow(emptyMap<String, DownloadStatus>())
+    val downloadStates get() = _downloadStates.asStateFlow()
 
-    private val _downloadedTracks = MutableStateFlow<List<DownloadedTrack>>(emptyList())
-    val downloadedTracks: StateFlow<List<DownloadedTrack>> = _downloadedTracks.asStateFlow()
+    private val _downloadProgress = MutableStateFlow(emptyMap<String, Float>())
+    val downloadProgress get() = _downloadProgress.asStateFlow()
+
+    private val _downloadedTracks = MutableStateFlow(emptyList<DownloadedTrack>())
+    val downloadedTracks get() = _downloadedTracks.asStateFlow()
 
     private val _totalDownloadedBytes = MutableStateFlow(0L)
-    val totalDownloadedBytes: StateFlow<Long> = _totalDownloadedBytes.asStateFlow()
+    val totalDownloadedBytes get() = _totalDownloadedBytes.asStateFlow()
 
     init {
-        scope.launch {
-            migrateLegacyDownloads()
-            refreshExistingDownloads()
-        }
+        migrateLegacyDownloads()
+        refreshExistingDownloads()
     }
 
     private fun migrateLegacyDownloads() {
-        if (!legacyDir.exists() || !legacyDir.isDirectory) return
-        val legacyFiles = legacyDir.listFiles() ?: return
-        for (legacy in legacyFiles) {
-            if (legacy.isFile && legacy.name.endsWith(".audio") && legacy.length() > 0L) {
-                val videoId = legacy.name.removeSuffix(".audio")
-                val targetFile = File(offlineDir, "$videoId.m4a")
-                if (!targetFile.exists()) {
-                    runCatching {
-                        legacy.copyTo(targetFile, overwrite = true)
-                        legacy.delete()
+        try {
+            if (legacyDir.exists() && legacyDir.isDirectory) {
+                legacyDir.listFiles()?.forEach { file ->
+                    val target = File(offlineDir, file.name)
+                    if (!target.exists()) {
+                        file.renameTo(target)
+                    } else {
+                        file.delete()
                     }
                 }
+                legacyDir.deleteRecursively()
             }
+        } catch (_: Exception) {
+            Log.e("OfflineDownloadManager", "Legacy download migration failed")
         }
     }
 
     fun refreshExistingDownloads() {
-        val tracks = mutableListOf<DownloadedTrack>()
-        var totalBytes = 0L
-        val statesMap = mutableMapOf<String, DownloadStatus>()
+        try {
+            val tracks = mutableListOf<DownloadedTrack>()
+            val statesMap = mutableMapOf<String, DownloadStatus>()
+            var totalBytes = 0L
 
-        val audioFiles = offlineDir.listFiles { file ->
-            file.isFile && (file.name.endsWith(".m4a") || file.name.endsWith(".audio")) && file.length() > 0L
-        } ?: emptyArray()
+            offlineDir.listFiles()?.forEach { audioFile ->
+                if (audioFile.isFile && audioFile.length() > 0L) {
+                    val videoId = audioFile.nameWithoutExtension
+                    statesMap[videoId] = DownloadStatus.DOWNLOADED
+                    totalBytes += audioFile.length()
 
-        for (audioFile in audioFiles) {
-            val videoId = audioFile.name.substringBeforeLast(".")
-            val metaFile = File(offlineDir, "$videoId.json")
-            val fileSize = audioFile.length()
-            totalBytes += fileSize
-            statesMap[videoId] = DownloadStatus.DOWNLOADED
+                    val metaFile = File(metaDir, "$videoId.json")
+                    val metadata = if (metaFile.exists()) {
+                        try {
+                            json.decodeFromString<DownloadedTrack>(metaFile.readText())
+                        } catch (_: Exception) {
+                            null
+                        }
+                    } else {
+                        null
+                    }
 
-            var metadata: DownloadedTrack? = null
-            if (metaFile.exists()) {
-                metadata = runCatching {
-                    json.decodeFromString<DownloadedTrack>(metaFile.readText())
-                }.getOrNull()
+                    val downloadedTrack = metadata ?: createDownloadedTrack(
+                        videoId = videoId,
+                        title = "Downloaded Track ($videoId)",
+                        artist = "Unknown Artist",
+                        duration = 0,
+                        thumbnailUrl = "",
+                        fileSize = audioFile.length(),
+                        timestamp = audioFile.lastModified()
+                    )
+                    tracks.add(downloadedTrack)
+                }
             }
 
-            val artFile = File(offlineDir, "$videoId.art")
-            val localArtUri = if (artFile.exists() && artFile.length() > 0L) artFile.toURI().toString() else null
-
-            if (metadata == null) {
-                metadata = DownloadedTrack(
-                    videoId = videoId,
-                    title = "Downloaded Track ($videoId)",
-                    artist = "Offline Audio",
-                    album = null,
-                    durationMs = 0L,
-                    thumbnailUrl = localArtUri,
-                    fileSizeBytes = fileSize,
-                    downloadedAtMs = audioFile.lastModified(),
-                )
-            } else {
-                metadata = metadata.copy(
-                    fileSizeBytes = if (metadata.fileSizeBytes <= 0L) fileSize else metadata.fileSizeBytes,
-                    thumbnailUrl = localArtUri ?: metadata.thumbnailUrl,
-                )
-            }
-            tracks.add(metadata)
+            tracks.sortByDescending { getTrackTimestamp(it) }
+            _downloadedTracks.value = tracks
+            _downloadStates.value = statesMap
+            _totalDownloadedBytes.value = totalBytes
+        } catch (e: Exception) {
+            Log.e("OfflineDownloadManager", "Failed to refresh existing downloads", e)
         }
-
-        tracks.sortByDescending { it.downloadedAtMs }
-        _downloadedTracks.value = tracks
-        _downloadStates.value = statesMap
-        _totalDownloadedBytes.value = totalBytes
     }
 
     fun getStatus(videoId: String): DownloadStatus =
@@ -134,154 +143,148 @@ class OfflineDownloadManager(
     fun getDownloadedFile(videoId: String): File? {
         val m4aFile = File(offlineDir, "$videoId.m4a")
         if (m4aFile.exists() && m4aFile.length() > 0L) return m4aFile
-
-        val legacyAudio = File(offlineDir, "$videoId.audio")
-        if (legacyAudio.exists() && legacyAudio.length() > 0L) return legacyAudio
-
-        val oldDirAudio = File(legacyDir, "$videoId.audio")
-        if (oldDirAudio.exists() && oldDirAudio.length() > 0L) return oldDirAudio
-
+        val legacyFile = File(offlineDir, videoId)
+        if (legacyFile.exists() && legacyFile.length() > 0L) return legacyFile
         return null
     }
 
-    fun isWifiConnected(): Boolean {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
-        val network = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(network) ?: return false
-        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    private suspend fun getTrackStreamUrl(track: Track): String? {
+        return try {
+            val repo = repository as? InnerTubeRepository ?: return null
+            val stream = repo.resolveAudioStream(track.videoId)
+            stream.audioUrl
+        } catch (e: Exception) {
+            Log.e("OfflineDownloadManager", "Failed to resolve audio stream for ${track.videoId}", e)
+            null
+        }
     }
 
-    fun downloadTrack(
-        track: Track,
-        onComplete: (Result<File>) -> Unit = {},
-    ) {
-        if (_downloadStates.value[track.videoId] == DownloadStatus.DOWNLOADING) {
-            onComplete(Result.failure(IllegalStateException("Already downloading \"${track.title}\"")))
-            return
+    private suspend fun downloadTrackInternal(track: Track): Result<Pair<DownloadedTrack, File>> = withContext(Dispatchers.IO) {
+        val trackId = getTrackId(track)
+        val trackTitle = getTrackTitle(track)
+        val trackUrl = getTrackStreamUrl(track)
+
+        if (_downloadStates.value[trackId] == DownloadStatus.DOWNLOADING) {
+            return@withContext Result.failure(IllegalStateException("Already downloading \"$trackTitle\""))
         }
 
-        scope.launch {
-            val wifiOnly = storageStore.downloadOverWifiOnlyFlow.first()
-            if (wifiOnly && !isWifiConnected()) {
-                val error = IllegalStateException("Wi-Fi required: 'Download over Wi-Fi only' is enabled.")
-                _downloadStates.update { it + (track.videoId to DownloadStatus.FAILED) }
-                withContext(Dispatchers.Main.immediate) {
-                    onComplete(Result.failure(error))
-                }
-                return@launch
-            }
+        downloadSemaphore.withPermit {
+            _downloadStates.update { map -> map + (trackId to DownloadStatus.DOWNLOADING) }
+            _downloadProgress.update { map -> map + (trackId to 0f) }
 
-            downloadSemaphore.withPermit {
-                _downloadStates.update { it + (track.videoId to DownloadStatus.DOWNLOADING) }
-                _downloadProgress.update { it + (track.videoId to 0f) }
+            var attempt = 0
+            val maxAttempts = 3
+            var lastException: Throwable? = null
 
-                val result = runCatching {
-                    val stream = repository.resolveAudioStream(track.videoId)
-                    val targetFile = File(offlineDir, "${track.videoId}.m4a")
-                    val tempFile = File(offlineDir, "${track.videoId}.part")
-                    val metaFile = File(offlineDir, "${track.videoId}.json")
-                    val artFile = File(offlineDir, "${track.videoId}.art")
+            while (attempt < maxAttempts) {
+                attempt++
+                val targetFile = File(offlineDir, "$trackId.m4a")
+                val tempFile = File(tempDir, "$trackId.tmp")
 
-                    val requestBuilder = Request.Builder().url(stream.audioUrl)
-                    requestBuilder.header("Origin", "https://music.youtube.com")
-                    requestBuilder.header("Referer", "https://music.youtube.com/")
-                    requestBuilder.header(
-                        "User-Agent",
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-                    )
-                    stream.headers.forEach { (k, v) ->
-                        if (v.isNotBlank()) requestBuilder.header(k, v)
+                try {
+                    val streamUrl = trackUrl ?: run {
+                        throw IOException("No audio stream URL available for track")
                     }
 
-                    httpClient.newCall(requestBuilder.build()).execute().use { response ->
-                        if (!response.isSuccessful) {
-                            error("Download failed with HTTP ${response.code}")
-                        }
-                        val body = response.body ?: error("Empty audio stream body")
-                        val totalBytes = body.contentLength().coerceAtLeast(1L)
-                        var bytesRead = 0L
+                    val headRequest = Request.Builder().url(streamUrl).head().build()
+                    val totalLength = httpClient.newCall(headRequest).execute().use { res ->
+                        res.header("Content-Length")?.toLongOrNull() ?: 0L
+                    }
 
-                        body.byteStream().use { input ->
-                            FileOutputStream(tempFile).use { output ->
-                                val buffer = ByteArray(16 * 1024)
-                                var read: Int
-                                while (input.read(buffer).also { read = it } != -1) {
-                                    output.write(buffer, 0, read)
-                                    bytesRead += read
-                                    if (totalBytes > 0) {
-                                        val progress = (bytesRead.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
-                                        _downloadProgress.update { it + (track.videoId to progress) }
-                                    }
-                                }
-                                output.flush()
+                    val chunkSize = 1_048_576L
+                    var downloadedBytes = 0L
+                    tempFile.delete()
+
+                    FileOutputStream(tempFile, true).use { output ->
+                        while (totalLength <= 0L || downloadedBytes < totalLength) {
+                            val endRange = if (totalLength > 0L) {
+                                minOf(downloadedBytes + chunkSize - 1L, totalLength - 1L)
+                            } else {
+                                downloadedBytes + chunkSize - 1L
                             }
-                        }
-                    }
 
-                    if (targetFile.exists()) targetFile.delete()
-                    if (!tempFile.renameTo(targetFile)) {
-                        tempFile.copyTo(targetFile, overwrite = true)
-                        tempFile.delete()
-                    }
+                            val chunkRequest = Request.Builder()
+                                .url(streamUrl)
+                                .header("Range", "bytes=$downloadedBytes-$endRange")
+                                .get()
+                                .build()
 
-                    // Cache album art locally if available
-                    if (!track.thumbnailUrl.isNullOrBlank()) {
-                        runCatching {
-                            val artReq = Request.Builder().url(track.thumbnailUrl).build()
-                            httpClient.newCall(artReq).execute().use { artResp ->
-                                if (artResp.isSuccessful) {
-                                    artResp.body?.bytes()?.let { bytes ->
-                                        artFile.writeBytes(bytes)
+                            httpClient.newCall(chunkRequest).execute().use { response ->
+                                if (!response.isSuccessful && response.code != 206 && response.code != 200) {
+                                    error("Chunk download failed with HTTP ${response.code}")
+                                }
+
+                                val body = response.body ?: error("Empty response body")
+                                body.byteStream().use { input ->
+                                    val buffer = ByteArray(64 * 1024)
+                                    var read: Int
+                                    while (input.read(buffer).also { read = it } != -1) {
+                                        output.write(buffer, 0, read)
+                                        downloadedBytes += read
+
+                                        if (totalLength > 0L) {
+                                            val progress = (downloadedBytes.toFloat() / totalLength.toFloat()).coerceIn(0f, 0.99f)
+                                            _downloadProgress.update { map -> map + (trackId to progress) }
+                                        }
                                     }
                                 }
                             }
+
+                            if (totalLength <= 0L || downloadedBytes >= totalLength) break
                         }
+                        output.flush()
                     }
 
-                    val resolvedThumb = if (artFile.exists() && artFile.length() > 0L) {
-                        artFile.toURI().toString()
-                    } else {
-                        track.thumbnailUrl
+                    fileMutex.withAction {
+                        if (targetFile.exists()) targetFile.delete()
+                        tempFile.renameTo(targetFile)
                     }
 
-                    val downloadedTrack = DownloadedTrack(
-                        videoId = track.videoId,
-                        title = track.title,
-                        artist = track.artist,
-                        album = track.album,
-                        durationMs = (track.durationSeconds ?: 0) * 1000L,
-                        thumbnailUrl = resolvedThumb,
-                        fileSizeBytes = targetFile.length(),
-                        downloadedAtMs = System.currentTimeMillis(),
+                    val downloadedTrack = createDownloadedTrack(
+                        videoId = trackId,
+                        title = trackTitle,
+                        artist = getTrackArtist(track),
+                        duration = getTrackDuration(track),
+                        thumbnailUrl = getTrackThumbnail(track),
+                        fileSize = targetFile.length(),
+                        timestamp = System.currentTimeMillis()
                     )
+
+                    val metaFile = File(metaDir, "$trackId.json")
                     metaFile.writeText(json.encodeToString(DownloadedTrack.serializer(), downloadedTrack))
 
-                    downloadedTrack to targetFile
-                }
-
-                if (result.isSuccess) {
-                    val (downloadedTrack, targetFile) = result.getOrThrow()
-                    _downloadStates.update { it + (track.videoId to DownloadStatus.DOWNLOADED) }
-                    _downloadProgress.update { it - track.videoId }
-                    _downloadedTracks.update { current ->
-                        val updated = listOf(downloadedTrack) + current.filter { it.videoId != track.videoId }
-                        _totalDownloadedBytes.value = updated.sumOf { it.fileSizeBytes }
-                        updated
-                    }
-
-                    withContext(Dispatchers.Main.immediate) {
-                        onComplete(Result.success(targetFile))
-                    }
-                } else {
-                    File(offlineDir, "${track.videoId}.part").delete()
-                    _downloadStates.update { it + (track.videoId to DownloadStatus.FAILED) }
-                    _downloadProgress.update { it - track.videoId }
-
-                    withContext(Dispatchers.Main.immediate) {
-                        onComplete(Result.failure(result.exceptionOrNull() ?: Exception("Unknown error")))
+                    return@withContext Result.success(downloadedTrack to targetFile)
+                } catch (e: Exception) {
+                    lastException = e
+                    Log.w("OfflineDownloadManager", "Attempt $attempt failed for $trackTitle: ${e.message}")
+                    if (attempt < maxAttempts) {
+                        delay((2000L * attempt).milliseconds)
                     }
                 }
+            }
+
+            _downloadStates.update { map -> map + (trackId to DownloadStatus.FAILED) }
+            _downloadProgress.update { map -> map.filterKeys { it != trackId } }
+            return@withContext Result.failure(lastException ?: IOException("Download failed after $maxAttempts attempts"))
+        }
+    }
+
+    fun downloadTrack(track: Track, onComplete: (Result<File>) -> Unit) {
+        scope.launch {
+            val trackId = getTrackId(track)
+            val result = downloadTrackInternal(track)
+            if (result.isSuccess) {
+                val (downloadedTrack, targetFile) = result.getOrThrow()
+                _downloadStates.update { map -> map + (trackId to DownloadStatus.DOWNLOADED) }
+                _downloadProgress.update { map -> map + (trackId to 1f) }
+                _downloadedTracks.update { current ->
+                    val updated = listOf(downloadedTrack) + current.filter { getDownloadedTrackId(it) != trackId }
+                    _totalDownloadedBytes.value = updated.sumOf { getDownloadedTrackSize(it) }
+                    updated
+                }
+                onComplete(Result.success(targetFile))
+            } else {
+                onComplete(Result.failure(result.exceptionOrNull() ?: IOException("Download failed")))
             }
         }
     }
@@ -289,101 +292,144 @@ class OfflineDownloadManager(
     fun downloadTracks(
         tracks: List<Track>,
         onProgress: (completed: Int, total: Int) -> Unit = { _, _ -> },
-        onAllComplete: (successCount: Int, failedCount: Int) -> Unit = { _, _ -> },
+        onAllComplete: (successCount: Int, failedCount: Int) -> Unit = { _, _ -> }
     ) {
-        val tracksToDownload = tracks.filter { getStatus(it.videoId) != DownloadStatus.DOWNLOADED }
-        if (tracksToDownload.isEmpty()) {
-            onAllComplete(0, 0)
-            return
-        }
-
         scope.launch {
-            var completedCount = 0
+            val tracksToDownload = tracks.filter { getStatus(getTrackId(it)) != DownloadStatus.DOWNLOADED }
             var successCount = 0
             var failedCount = 0
+            var completedCount = 0
             val total = tracksToDownload.size
 
             for (track in tracksToDownload) {
-                downloadTrack(track) { res ->
-                    completedCount++
-                    if (res.isSuccess) successCount++ else failedCount++
-                    onProgress(completedCount, total)
-                    if (completedCount >= total) {
-                        onAllComplete(successCount, failedCount)
+                val trackId = getTrackId(track)
+                val result = downloadTrackInternal(track)
+                if (result.isSuccess) {
+                    val (downloadedTrack, _) = result.getOrThrow()
+                    _downloadStates.update { map -> map + (trackId to DownloadStatus.DOWNLOADED) }
+                    _downloadProgress.update { map -> map + (trackId to 1f) }
+                    _downloadedTracks.update { current ->
+                        val updated = listOf(downloadedTrack) + current.filter { getDownloadedTrackId(it) != trackId }
+                        _totalDownloadedBytes.value = updated.sumOf { getDownloadedTrackSize(it) }
+                        updated
                     }
+                    successCount++
+                } else {
+                    failedCount++
                 }
+                completedCount++
+                onProgress(completedCount, total)
             }
+            onAllComplete(successCount, failedCount)
         }
     }
 
     fun removeDownload(videoId: String) {
-        scope.launch {
-            val audio = getDownloadedFile(videoId)
-            val fileSize = audio?.length() ?: 0L
-            audio?.delete()
-            File(offlineDir, "$videoId.m4a").delete()
-            File(offlineDir, "$videoId.audio").delete()
-            File(offlineDir, "$videoId.part").delete()
-            File(offlineDir, "$videoId.json").delete()
+        try {
+            getDownloadedFile(videoId)?.delete()
+            File(metaDir, "$videoId.json").delete()
             File(offlineDir, "$videoId.art").delete()
 
-            _downloadStates.update { it - videoId }
-            _downloadProgress.update { it - videoId }
+            _downloadStates.update { map -> map.filterKeys { it != videoId } }
+            _downloadProgress.update { map -> map.filterKeys { it != videoId } }
             _downloadedTracks.update { list ->
-                val updated = list.filter { it.videoId != videoId }
-                _totalDownloadedBytes.value = updated.sumOf { it.fileSizeBytes }
+                val updated = list.filter { getDownloadedTrackId(it) != videoId }
+                _totalDownloadedBytes.value = updated.sumOf { getDownloadedTrackSize(it) }
                 updated
             }
+        } catch (e: Exception) {
+            Log.e("OfflineDownloadManager", "Failed to remove download $videoId", e)
         }
     }
 
     fun deleteAllDownloads() {
-        scope.launch {
+        try {
             offlineDir.listFiles()?.forEach { it.delete() }
+            metaDir.listFiles()?.forEach { it.delete() }
             legacyDir.listFiles()?.forEach { it.delete() }
+            tempDir.listFiles()?.forEach { it.delete() }
 
             _downloadStates.value = emptyMap()
             _downloadProgress.value = emptyMap()
             _downloadedTracks.value = emptyList()
             _totalDownloadedBytes.value = 0L
+        } catch (e: Exception) {
+            Log.e("OfflineDownloadManager", "Failed to delete all downloads", e)
         }
     }
 
     fun calculateCacheSizeBytes(): Long {
-        var size = calculateDirSize(context.cacheDir)
-        context.externalCacheDir?.let { size += calculateDirSize(it) }
+        var size = 0L
+        try {
+            tempDir.listFiles()?.forEach { file ->
+                if (file.isFile) size += file.length()
+            }
+        } catch (_: Exception) {}
         return size
     }
 
     fun clearTemporaryCache(): Long {
-        val initialSize = calculateCacheSizeBytes()
-        runCatching {
-            context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
-            context.externalCacheDir?.listFiles()?.forEach { it.deleteRecursively() }
-            Coil.imageLoader(context).diskCache?.clear()
-            Coil.imageLoader(context).memoryCache?.clear()
-        }
-        return initialSize
+        var freed = 0L
+        try {
+            tempDir.listFiles()?.forEach { file ->
+                if (file.isFile) {
+                    freed += file.length()
+                    file.delete()
+                }
+            }
+        } catch (_: Exception) {}
+        return freed
     }
 
-    private fun calculateDirSize(dir: File?): Long {
-        if (dir == null || !dir.exists()) return 0L
-        var total = 0L
-        dir.listFiles()?.forEach { file ->
-            total += if (file.isDirectory) calculateDirSize(file) else file.length()
+    private suspend inline fun <T> Mutex.withAction(action: () -> T): T {
+        lock()
+        try {
+            return action()
+        } finally {
+            unlock()
         }
-        return total
     }
 
-    fun getDownloadedCount(): Int = _downloadedTracks.value.size
+    private fun getTrackId(track: Track): String = track.videoId
+    private fun getTrackTitle(track: Track): String = track.title
+    private fun getTrackArtist(track: Track): String = track.artist
+    private fun getTrackDuration(track: Track): Int = track.durationSeconds ?: 0
+    private fun getTrackThumbnail(track: Track): String = track.thumbnailUrl ?: ""
+
+    private fun createDownloadedTrack(
+        videoId: String,
+        title: String,
+        artist: String,
+        duration: Int,
+        thumbnailUrl: String,
+        fileSize: Long,
+        timestamp: Long
+    ): DownloadedTrack {
+        return DownloadedTrack(
+            videoId = videoId,
+            title = title,
+            artist = artist,
+            album = null,
+            durationMs = duration.toLong() * 1000L,
+            thumbnailUrl = thumbnailUrl,
+            fileSizeBytes = fileSize,
+            downloadedAtMs = timestamp
+        )
+    }
+
+    private fun getDownloadedTrackId(item: DownloadedTrack): String = item.videoId
+    private fun getDownloadedTrackSize(item: DownloadedTrack): Long = item.fileSizeBytes
+    private fun getTrackTimestamp(item: DownloadedTrack): Long = item.downloadedAtMs
 
     companion object {
         fun formatBytes(bytes: Long): String {
-            if (bytes <= 0L) return "0 B"
-            val units = arrayOf("B", "KB", "MB", "GB", "TB")
-            val digitGroups = (log10(bytes.toDouble()) / log10(1024.0)).toInt().coerceIn(0, units.size - 1)
-            val value = bytes / 1024.0.pow(digitGroups.toDouble())
-            return "%.1f %s".format(value, units[digitGroups])
+            if (bytes < 1024) return "$bytes B"
+            val kb = bytes / 1024.0
+            if (kb < 1024) return String.format(Locale.getDefault(), "%.1f KB", kb)
+            val mb = kb / 1024.0
+            if (mb < 1024) return String.format(Locale.getDefault(), "%.1f MB", mb)
+            val gb = mb / 1024.0
+            return String.format(Locale.getDefault(), "%.2f GB", gb)
         }
     }
 }

@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -33,7 +34,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
+@OptIn(UnstableApi::class)
 class PlaybackController(private val context: Context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -44,12 +48,17 @@ class PlaybackController(private val context: Context) {
     private val _sleepTimerState = MutableStateFlow<SleepTimerState>(SleepTimerState.Off)
     val sleepTimerState: StateFlow<SleepTimerState> = _sleepTimerState.asStateFlow()
 
-    @OptIn(UnstableApi::class)
     private val _audioSessionId = MutableStateFlow(C.AUDIO_SESSION_ID_UNSET)
     val audioSessionId: StateFlow<Int> = _audioSessionId.asStateFlow()
 
     private val _likedVideoIds = MutableStateFlow<Set<String>>(emptySet())
     val likedVideoIds: StateFlow<Set<String>> = _likedVideoIds.asStateFlow()
+
+    private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
+    val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
+
+    private val _shuffleModeEnabled = MutableStateFlow(false)
+    val shuffleModeEnabled: StateFlow<Boolean> = _shuffleModeEnabled.asStateFlow()
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
@@ -80,7 +89,6 @@ class PlaybackController(private val context: Context) {
         audioVisualizerManager.attachToAudioSession(audioSessionId)
     }
 
-    @OptIn(UnstableApi::class)
     fun releaseAudioEffectsSession() {
         _audioSessionId.value = C.AUDIO_SESSION_ID_UNSET
         audioEffectsManager.detachSession()
@@ -230,6 +238,26 @@ class PlaybackController(private val context: Context) {
         schedulePreloadNextTrack(safeIndex)
     }
 
+    fun toggleRepeatMode() {
+        withController { controller ->
+            val nextMode = when (controller.repeatMode) {
+                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                else -> Player.REPEAT_MODE_OFF
+            }
+            controller.repeatMode = nextMode
+            _repeatMode.value = nextMode
+        }
+    }
+
+    fun toggleShuffleMode() {
+        withController { controller ->
+            val newShuffle = !controller.shuffleModeEnabled
+            controller.shuffleModeEnabled = newShuffle
+            _shuffleModeEnabled.value = newShuffle
+        }
+    }
+
     fun flushPendingListenTime() {
         flushListeningSession(resetBelowThreshold = false)
     }
@@ -310,7 +338,7 @@ class PlaybackController(private val context: Context) {
         sleepTimerJob = scope.launch {
             var remaining = totalSeconds
             while (remaining > 0L && isActive) {
-                delay(1_000L)
+                delay(1.seconds)
                 remaining--
                 _sleepTimerState.value = SleepTimerState.Countdown(remaining)
             }
@@ -398,6 +426,16 @@ class PlaybackController(private val context: Context) {
                     schedulePreloadNextTrack(controller.currentMediaItemIndex)
                 }
 
+                override fun onRepeatModeChanged(repeatMode: Int) {
+                    _repeatMode.value = repeatMode
+                    syncFromController(controller)
+                }
+
+                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                    _shuffleModeEnabled.value = shuffleModeEnabled
+                    syncFromController(controller)
+                }
+
                 override fun onAudioSessionIdChanged(audioSessionId: Int) {
                     attachAudioEffectsSession(audioSessionId)
                 }
@@ -416,11 +454,22 @@ class PlaybackController(private val context: Context) {
     }
 
     private fun syncFromController(controller: MediaController) {
+        if (activeQueue.isEmpty() && controller.mediaItemCount > 0) {
+            val restored = mutableListOf<Track>()
+            for (i in 0 until controller.mediaItemCount) {
+                restored += controller.getMediaItemAt(i).toTrackFallback()
+            }
+            activeQueue = restored
+        }
+
         val index = controller.currentMediaItemIndex
         val currentTrack = activeQueue.getOrNull(index)
             ?: controller.currentMediaItem?.toTrackFallback()
         val reportedDuration = controller.duration.takeIf { it > 0L }
             ?: ((currentTrack?.durationSeconds ?: 0) * 1000L)
+
+        _repeatMode.value = controller.repeatMode
+        _shuffleModeEnabled.value = controller.shuffleModeEnabled
 
         _playbackState.update { prev ->
             prev.copy(
@@ -450,7 +499,7 @@ class PlaybackController(private val context: Context) {
                         durationMs = reportedDuration.coerceAtLeast(0L),
                     )
                 }
-                delay(400L)
+                delay(400.milliseconds)
             }
         }
     }
@@ -526,7 +575,10 @@ class PlaybackController(private val context: Context) {
             .setTitle(title)
             .setArtist(artist)
             .setAlbumTitle(album)
-            .setArtworkUri(thumbnailUrl?.let { Uri.parse(it) })
+            .setArtworkUri(thumbnailUrl?.toUri())
+            .setIsBrowsable(false)
+            .setIsPlayable(true)
+            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
             .setExtras(extras)
             .build()
 

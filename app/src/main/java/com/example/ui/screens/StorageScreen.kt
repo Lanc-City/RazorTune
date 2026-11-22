@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -53,11 +54,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.OfflineDownloadManager
 import com.example.model.DownloadedTrack
+import com.example.ui.components.BackupRestoreSection
 
 @Composable
 fun StorageScreen(
@@ -73,6 +76,7 @@ fun StorageScreen(
     onClearCache: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     var showDeleteAllDialog by remember { mutableStateOf(false) }
     var showManageList by rememberSaveable { mutableStateOf(false) }
 
@@ -385,6 +389,19 @@ fun StorageScreen(
                         )
                     }
                 }
+
+                // 4. Local Database Backup & Restore with Toast Confirmations
+                BackupRestoreSection(
+                    onBackupSuccess = { uri ->
+                        Toast.makeText(context, "Database backup created successfully!", Toast.LENGTH_SHORT).show()
+                    },
+                    onRestoreSuccess = { uri ->
+                        Toast.makeText(context, "Database restored successfully!", Toast.LENGTH_SHORT).show()
+                    },
+                    onError = { error ->
+                        Toast.makeText(context, "Error: ${error.localizedMessage ?: "Operation failed"}", Toast.LENGTH_LONG).show()
+                    }
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
